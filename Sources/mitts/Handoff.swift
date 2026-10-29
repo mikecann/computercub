@@ -1,11 +1,11 @@
 import AppKit
 
-// "Over to you": a small floating panel on the window that needs Mike (a sign-in, a
-// passkey, a 2FA code, anything that's his), with a Done button. The agent can wait on
-// it, then carries on with a diff of what changed while he was in there.
 // The first name of whoever is signed in to the Mac: "Over to you, Mike".
 let userName = NSFullUserName().split(separator: " ").first.map(String.init) ?? "you"
 
+// "Over to you": a small floating panel on the window that needs Mike (a sign-in, a
+// passkey, a 2FA code, anything that's his), with a Done button. The agent can wait on
+// it, then carries on with a diff of what changed while he was in there.
 final class Handoffs: NSObject {
     static let shared = Handoffs()
 
