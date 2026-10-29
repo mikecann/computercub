@@ -58,7 +58,8 @@ mitts: lets agents use the Mac's apps through the Accessibility API.
   mitts shot <window|ref> [--max 1600]  window-only PNG; prints the path, deleted after an hour
   mitts handoff <window> <message> [--wait 300]
                                         brings the window up with an "Over to you" panel, for
-                                        sign-ins, passkeys and anything else that's Mike's
+                                        sign-ins, passkeys and anything else that only the
+                                        person at the Mac should do
   mitts doctor                          permissions and displays
   mitts clean                           delete screenshots and saved reads now
   mitts quit                            stop the background app
@@ -282,7 +283,7 @@ final class Commands {
         let (el, win) = try desk.lookup(ref)
         let role = el.string(kAXRoleAttribute) ?? ""
         if role == "AXSecureTextField" || el.string(kAXSubroleAttribute) == "AXSecureTextField" {
-            throw MittsError("\(ref) is a password field. Passwords stay with Mike: use `mitts handoff \(desk.ref(for: win)) \"…\"`.")
+            throw MittsError("\(ref) is a password field. Passwords stay with \(userName): use `mitts handoff \(desk.ref(for: win)) \"…\"`.")
         }
         return try acting(win) {
             el.set(kAXFocusedAttribute, kCFBooleanTrue)
@@ -437,7 +438,7 @@ final class Commands {
 
     private func handoff(_ a: Args) throws -> String {
         let target = try a.at(0, "a window")
-        let message = try a.at(1, "what Mike needs to do")
+        let message = try a.at(1, "what \(userName) needs to do")
         guard !Thread.isMainThread else { throw MittsError("handoff needs the Mitts app; run the installed `mitts`.") }
         let (win, label) = try work.sync { () throws -> (Win, String) in
             let w = try desk.window(target)
@@ -448,17 +449,17 @@ final class Commands {
         let frame = win.el.frame
         DispatchQueue.main.sync { Handoffs.shared.show(window: win.id, message: message, near: frame) }
         guard let wait = a.flags["wait"].flatMap(Double.init) else {
-            return "Over to Mike in \(label): \(message)\nThe panel stays up until he clicks Done. `--wait 300` waits for that."
+            return "Over to \(userName) in \(label): \(message)\nThe panel stays up until they click Done. `--wait 300` waits for that."
         }
         guard Handoffs.shared.wait(window: win.id, timeout: wait) else {
-            return "Still with Mike after \(Int(wait)) s. Run the same command to keep waiting."
+            return "Still with \(userName) after \(Int(wait)) s. Run the same command to keep waiting."
         }
         return try work.sync {
-            guard win.el.isAlive else { return "Mike's done; \(label) has closed." }
+            guard win.el.isAlive else { return "\(userName)'s done; \(label) has closed." }
             let lines = Snapshot.lines(win, desk)
             let d = Snapshot.diff(desk.lastLines[win.id], lines)
             desk.lastLines[win.id] = lines
-            return "Mike's done.\n\(label)\(d.full ? "" : " (changes)")\n\(d.text)"
+            return "\(userName)'s done.\n\(label)\(d.full ? "" : " (changes)")\n\(d.text)"
         }
     }
 }

@@ -3,6 +3,9 @@ import AppKit
 // "Over to you": a small floating panel on the window that needs Mike (a sign-in, a
 // passkey, a 2FA code, anything that's his), with a Done button. The agent can wait on
 // it, then carries on with a diff of what changed while he was in there.
+// The first name of whoever is signed in to the Mac: "Over to you, Mike".
+let userName = NSFullUserName().split(separator: " ").first.map(String.init) ?? "you"
+
 final class Handoffs: NSObject {
     static let shared = Handoffs()
 
@@ -23,8 +26,7 @@ final class Handoffs: NSObject {
         }
         lock.unlock()
 
-        let first = NSFullUserName().split(separator: " ").first.map(String.init) ?? "you"
-        let title = NSTextField(labelWithString: "Over to you, \(first)")
+        let title = NSTextField(labelWithString: "Over to you, \(userName)")
         title.font = .boldSystemFont(ofSize: 15)
         let body = NSTextField(wrappingLabelWithString: message)
         body.preferredMaxLayoutWidth = 300
