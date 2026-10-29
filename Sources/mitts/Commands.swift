@@ -82,6 +82,8 @@ final class Commands {
             // Waits for Mike outside the work queue, so other commands still run meanwhile.
             case "handoff": return Reply(ok: true, out: try handoff(a))
             case "quit":
+                // Hand Chrome back its normal accessibility mode before going.
+                work.sync { desk.relaxWeb(idleFor: 0) }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exit(0) }
                 return Reply(ok: true, out: "Mitts stopped.")
             default:
