@@ -13,8 +13,9 @@ Paws for ordinary Chrome pages; Mitts is for everything else.
 2. `mitts snap <window>` lists controls as `e12 button "Save"`. Later snaps show only
    what changed. `mitts read <window>` gives the words, for reading values.
 3. `mitts click e12`, `mitts type e7 "text" [--submit]`, `mitts press <window> cmd+shift+g`,
-   `mitts menu <app> "File > New Window"`. Each answers with what changed, so don't snap
-   again after it.
+   `mitts menu <app> "File > New Window"`, `mitts drag e19 e18` (a file onto a folder),
+   `mitts move <window> x y [w h]`. Each answers with what changed, so don't snap again
+   after it.
 4. If a key does nothing in a background app, retry with `--front`. If a click needs a
    real mouse, `--mouse`. Both briefly bring the window forward.
 5. Passwords, passkeys and 2FA are Mike's: `mitts handoff <window> "what to do" --wait 300`
