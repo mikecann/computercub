@@ -55,7 +55,8 @@ What it's like to use:
 ## Install
 
 ```sh
-./scripts/install.sh    # builds Mitts.app into ~/Applications and links `mitts` into ~/.local/bin
+./scripts/install.sh    # builds Mitts.app into ~/Applications, links `mitts` into ~/.local/bin
+                        # and the agent skill into ~/.claude/skills and ~/.codex/skills
 mitts doctor            # starts it, and says which permissions it still needs
 ```
 
@@ -107,4 +108,4 @@ Tested by hand on 29 Oct 2026:
 - Chrome stops updating a page's tree while its window is fully covered.
 - No scrolling by mouse wheel, drag and drop, or right-click menus yet.
 - No approvals for posting, sending or deleting; Threadbear will own those, as for Paws.
-- No icon, and no LaunchAgent (the CLI starts the app when it's needed).
+- No LaunchAgent (the CLI starts the app when it's needed).

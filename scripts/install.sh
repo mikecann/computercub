@@ -14,7 +14,14 @@ trap 'rm -rf "$STAGE_ROOT"' EXIT
 STAGE="$STAGE_ROOT/Mitts.app"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp "$BIN" "$STAGE/Contents/MacOS/mitts"
-if [[ -f "$ROOT/icons/Mitts.icns" ]]; then cp "$ROOT/icons/Mitts.icns" "$STAGE/Contents/Resources/Mitts.icns"; fi
+# icons/mitts.png is rendered from icons/mitts.svg (svg-to-png, then sips -z 1024 1024).
+mkdir -p "$STAGE_ROOT/icon.iconset"
+for SIZE in 16 32 128 256 512; do
+  sips -z "$SIZE" "$SIZE" "$ROOT/icons/mitts.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}.png" >/dev/null
+  DOUBLE=$((SIZE * 2))
+  sips -z "$DOUBLE" "$DOUBLE" "$ROOT/icons/mitts.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
+done
+iconutil -c icns "$STAGE_ROOT/icon.iconset" -o "$STAGE/Contents/Resources/Mitts.icns"
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -61,5 +68,14 @@ mkdir -p "$(dirname "$APP")" "$(dirname "$CLI")"
 rm -rf "$APP"
 mv "$STAGE" "$APP"
 ln -sfn "$APP/Contents/MacOS/mitts" "$CLI"
+# The agent skill, so Claude and Codex know to reach for `mitts`.
+for SKILLS in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+  LINK="$SKILLS/mitts"
+  if [[ -e "$LINK" || -L "$LINK" ]] && [[ "$(readlink "$LINK" || true)" != "$ROOT/skill" ]]; then
+    echo "Something else is at $LINK; leaving it." >&2
+  elif [[ -d "$SKILLS" ]]; then
+    ln -sfn "$ROOT/skill" "$LINK"
+  fi
+done
 echo "Installed $APP, signed by $IDENTITY"
 echo "\`mitts doctor\` starts it and says which permissions it still needs."
