@@ -55,6 +55,9 @@ mitts: lets agents use the Mac's apps through the Accessibility API.
                                         --front brings the window forward just for them
   mitts menu <app> [File > New Window]  list an app's menus, or pick an item
   mitts scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
+  mitts drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
+  mitts move <window> <x> <y> [w h]     move (and resize) a window, in points from the
+                                        main display's top-left corner
   mitts shot <window|ref> [--max 1600]  window-only PNG; prints the path, deleted after an hour
   mitts handoff <window> <message> [--wait 300]
                                         brings the window up with an "Over to you" panel, for
@@ -120,6 +123,8 @@ final class Commands {
         case "menu": return try menu(try a.at(0, "an app"), a.pos.count > 1 ? a.pos[1] : nil)
         case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil)
         case "shot": return try shot(try a.at(0, "a window or ref"), max: Int(a.flags["max"] ?? "") ?? 1600)
+        case "drag": return try drag(try a.at(0, "what to drag"), try a.at(1, "where to drop it"))
+        case "move": return try move(try a.at(0, "a window"), Array(a.pos.dropFirst()))
         default: throw MittsError("No command \"\(cmd)\". See `mitts help`.")
         }
     }
@@ -426,6 +431,72 @@ final class Commands {
             queue += n.elements(kAXChildrenAttribute)
         }
         return best?.0
+    }
+
+    // There's no accessibility action for dragging, so this is a real mouse drag:
+    // the window comes forward, and the pointer goes back where it was afterwards.
+    private func drag(_ from: String, _ to: String) throws -> String {
+        let (src, win) = try desk.lookup(from)
+        guard let a = grabPoint(src) else { throw MittsError("Can't tell where \(from) is on screen.") }
+        let b: CGPoint
+        if to.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
+            guard let p = grabPoint(try desk.lookup(to).el) else { throw MittsError("Can't tell where \(to) is on screen.") }
+            b = p
+        } else {
+            guard let f = try desk.window(to).el.frame else { throw MittsError("Can't tell where \(to) is on screen.") }
+            b = CGPoint(x: f.midX, y: f.midY)
+        }
+        return try acting(win) {
+            Input.bringForward(win)
+            usleep(300_000)
+            for (p, name) in [(a, from), (b, to)] {
+                if let owner = Input.owner(at: p), owner != win.pid, name == from || desk.windowOwner(to) != owner {
+                    let app = NSRunningApplication(processIdentifier: owner)?.localizedName ?? "another app"
+                    throw MittsError("\(app) is on top of \(name), so the drag would land there. Not dragging.")
+                }
+            }
+            Input.drag(from: a, to: b)
+            return "Dragged \(from) onto \(to) with the mouse."
+        }
+    }
+
+    // Where to take hold of an element. In a list, the middle of a row is often
+    // empty space, where a drag draws a selection box (Finder's list view), so
+    // grab the row's icon or name instead.
+    private func grabPoint(_ el: AXUIElement) -> CGPoint? {
+        let role = el.string(kAXRoleAttribute) ?? ""
+        if role == "AXRow" || role == "AXCell" {
+            var queue = el.elements(kAXChildrenAttribute), seen = 0
+            while !queue.isEmpty, seen < 40 {
+                let k = queue.removeFirst()
+                seen += 1
+                let r = k.string(kAXRoleAttribute) ?? ""
+                if ["AXImage", "AXTextField", "AXStaticText"].contains(r), let f = k.frame, f.width > 0 {
+                    return CGPoint(x: f.midX, y: f.midY)
+                }
+                queue += k.elements(kAXChildrenAttribute)
+            }
+        }
+        guard let f = el.frame, f.width > 0 else { return nil }
+        return CGPoint(x: f.midX, y: f.midY)
+    }
+
+    private func move(_ target: String, _ numbers: [String]) throws -> String {
+        let win = try desk.window(target)
+        let v = numbers.compactMap(Double.init)
+        guard v.count == 2 || v.count == 4 else {
+            throw MittsError("Give x and y (top-left, in points), and optionally width and height: `mitts move \(target) 100 80 1200 800`.")
+        }
+        var p = CGPoint(x: v[0], y: v[1])
+        guard win.el.set(kAXPositionAttribute, AXValueCreate(.cgPoint, &p)!) == .success else {
+            throw MittsError("\(win.appName) wouldn't move that window.")
+        }
+        if v.count == 4 {
+            var s = CGSize(width: v[2], height: v[3])
+            win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &s)!)
+        }
+        usleep(150_000)
+        return "Moved " + desk.describe(win, focused: nil)
     }
 
     private func shot(_ target: String, max: Int) throws -> String {

@@ -59,6 +59,8 @@ mitts click e23
 mitts press w2 cmd+shift+g                    # keys go to the app, even in the background
 mitts type e57 "~/Downloads" --submit
 mitts menu Finder "File > New Finder Window"
+mitts drag e19 e18                            # a real mouse drag, like a file onto a folder
+mitts move w2 100 80 1200 800                 # move and resize a window
 mitts read "System Settings"                  # the words, for reading values off a window
 mitts snap "Chrome:Work"                      # Chrome's toolbar, tabs and the page
 mitts shot w2                                 # a PNG of just that window
@@ -90,7 +92,7 @@ For Chrome and other Chromium browsers it asks for their web accessibility tree,
 
 - Windows on other Spaces don't show up, because macOS only lists the current Space's.
 - Chrome stops updating a page's tree while its window is completely covered.
-- No mouse-wheel scrolling, drag and drop or right-click menus yet.
+- No mouse-wheel scrolling or right-click menus yet. Dragging uses the real mouse, so it brings the window forward for a moment.
 - Nothing asks before an agent posts, sends or deletes something. Tell your agent to ask you first.
 
 ## Development

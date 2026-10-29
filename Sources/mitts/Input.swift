@@ -102,6 +102,42 @@ enum Input {
         win.el.perform(kAXRaiseAction)
     }
 
+    // The app whose window is on top at a point on screen.
+    static func owner(at p: CGPoint) -> pid_t? {
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(p.x), Float(p.y), &hit) == .success,
+              let hit else { return nil }
+        return hit.pid
+    }
+
+    static func drag(from a: CGPoint, to b: CGPoint) {
+        let saved = CGEvent(source: nil)?.location
+        let src = CGEventSource(stateID: .hidSystemState)
+        func post(_ type: CGEventType, _ p: CGPoint) {
+            guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+            if type != .mouseMoved { e.setIntegerValueField(.mouseEventClickState, value: 1) }
+            e.post(tap: .cghidEventTap)
+        }
+        post(.mouseMoved, a)
+        usleep(80_000)
+        post(.leftMouseDown, a)
+        usleep(150_000)
+        // Lots of small steps: Finder and friends only start a drag once the
+        // pointer has moved a little with the button held, and a jump looks like a click.
+        let steps = 30
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            post(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+            usleep(16_000)
+        }
+        usleep(200_000)
+        post(.leftMouseUp, b)
+        if let saved {
+            usleep(100_000)
+            CGWarpMouseCursorPosition(saved)
+        }
+    }
+
     static func click(_ el: AXUIElement, in win: Win, double: Bool) throws {
         guard let f = el.frame, f.width > 0, f.height > 0 else { throw MittsError("Can't tell where that is on screen.") }
         let p = CGPoint(x: f.midX, y: f.midY)

@@ -147,6 +147,13 @@ final class Desktop {
         return wins[0]
     }
 
+    // Which app owns a drop target, so a drag between apps isn't mistaken for
+    // something covering it.
+    func windowOwner(_ target: String) -> pid_t? {
+        if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil { return elementsByRef[target]?.pid }
+        return try? window(target).pid
+    }
+
     func header(_ win: Win) -> String {
         "\(ref(for: win)) \(win.appName) \"\(clip(win.title))\""
     }
