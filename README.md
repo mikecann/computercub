@@ -5,8 +5,9 @@ Computer use for your Mac: lets your AI agents click around in its apps
 macOS 14 or later
 
 <!-- media: hero -->
-![An agent looking at a Finder window through ComputerCub: a short list of rows with refs, a click on one of them, and just the lines that changed](docs/demo.png)
+<a href="docs/media/computercub.mp4"><img src="docs/media/computercub.gif" alt="The ComputerCub bear explains: your AI agents (Claude, Codex, Threadbear) ask ComputerCub to do something, and it clicks, drags and types in your Mac's apps, then hands passwords back to you" width="720"></a>
 
+<sub>24 s. Click for the video with sound.</sub>
 <!-- /media: hero -->
 
 ## What it is
@@ -68,6 +69,10 @@ computercub handoff "Chrome:App Store" "Sign in with your passkey, then click Do
 ```
 
 `computercub help` lists everything.
+
+This is what an agent sees and gets back, in Finder:
+
+![An agent looking at a Finder window through ComputerCub: a short list of rows with refs, a click on one of them, and just the lines that changed](docs/demo.png)
 
 - **Windows** are named by what they are: an app (`Finder`), an app and part of a title (`"Chrome:Web Store"`), or the `w3` ref from `computercub windows`, which sticks to that window while it's open. Chrome puts the profile name at the end of its window titles, so `"Chrome:Work"` finds the right profile.
 - **Refs** like `e12` stay on the same control between looks. After the first `snap` you only get what changed, and clicking, typing and keys answer with that diff, plus any new window or sheet the app opened, so there's no need to look again.
