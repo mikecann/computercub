@@ -17,7 +17,7 @@ enum Shot {
     static func capture(_ win: Win, crop: CGRect?, maxSide: Int) throws -> String {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
-            throw CubError("ComputerCub needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub. Everything else works without it.")
+            throw CubError("ComputerCub needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub. Everything else works without it.", restart: true)
         }
         guard win.id != 0 else { throw CubError("Can't find that window's id, so can't capture it.") }
 

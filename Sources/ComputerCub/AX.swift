@@ -9,7 +9,13 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CG
 
 struct CubError: Error, CustomStringConvertible {
     let description: String
-    init(_ description: String) { self.description = description }
+    // A fresh process might succeed where this one can't: macOS only hands a Screen
+    // Recording grant to processes started after it was given.
+    let restart: Bool
+    init(_ description: String, restart: Bool = false) {
+        self.description = description
+        self.restart = restart
+    }
 }
 
 // Two AXUIElements for the same control compare equal with CFEqual, even when fetched

@@ -62,7 +62,7 @@ enum Service {
               let req = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let args = req["args"] as? [String] else { return }
         let reply = Commands.shared.run(args)
-        Wire.send(c, ["ok": reply.ok, "out": reply.out])
+        Wire.send(c, ["ok": reply.ok, "out": reply.out, "restart": reply.restart])
     }
 }
 
@@ -77,6 +77,19 @@ enum Client {
         guard let app = appBundle(), !args.contains("--local") else {
             return finish(Commands.shared.run(args.filter { $0 != "--local" }))
         }
+        guard var reply = call(args, app: app) else { return 1 }
+        // Granting Screen Recording while the app is running doesn't reach it until it
+        // restarts, so restart it once and try again before giving up.
+        if !reply.ok && reply.restart {
+            restart(app)
+            guard let again = call(args, app: app) else { return 1 }
+            reply = again
+        }
+        return finish(reply)
+    }
+
+    // Sends one command to ComputerCub.app, starting the app if it isn't running.
+    private static func call(_ args: [String], app: URL) -> Reply? {
         var fd = connect()
         if fd < 0 {
             // `open` starts it through LaunchServices, so it's its own responsible process.
@@ -92,7 +105,7 @@ enum Client {
         }
         guard fd >= 0 else {
             FileHandle.standardError.write("computercub: couldn't start \(app.path)\n".data(using: .utf8)!)
-            return 1
+            return nil
         }
         defer { close(fd) }
         var on: Int32 = 1
@@ -101,9 +114,20 @@ enum Client {
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
             FileHandle.standardError.write("computercub: no answer from ComputerCub.app\n".data(using: .utf8)!)
-            return 1
+            return nil
         }
-        return finish(Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? ""))
+        return Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? "", restart: reply["restart"] as? Bool ?? false)
+    }
+
+    // Stops the running app and waits for it to go, so the next call starts a fresh one.
+    private static func restart(_ app: URL) {
+        _ = call(["quit"], app: app)
+        for _ in 0..<40 {
+            let fd = connect()
+            if fd < 0 { return }
+            close(fd)
+            usleep(100_000)
+        }
     }
 
     private static func finish(_ r: Reply) -> Int32 {

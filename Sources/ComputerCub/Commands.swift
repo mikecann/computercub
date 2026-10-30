@@ -4,6 +4,7 @@ import ApplicationServices
 struct Reply {
     var ok: Bool
     var out: String
+    var restart = false
 }
 
 struct Args {
@@ -94,6 +95,8 @@ final class Commands {
             default:
                 return Reply(ok: true, out: try work.sync { try dispatch(cmd, a) })
             }
+        } catch let e as CubError {
+            return Reply(ok: false, out: e.description, restart: e.restart)
         } catch {
             return Reply(ok: false, out: "\(error)")
         }

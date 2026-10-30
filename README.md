@@ -46,7 +46,7 @@ computercub doctor
 
 That builds `~/Applications/ComputerCub.app`, links `computercub` into `~/.local/bin`, and links the agent skill into `~/.claude/skills` and `~/.codex/skills` if you have those folders, so Claude Code and Codex know it's there. Add `~/.local/bin` to your PATH if it isn't already.
 
-`computercub doctor` starts the app, and the first time macOS asks for two permissions. Turn on ComputerCub in **System Settings > Privacy & Security > Accessibility** (it can't do anything without that) and **Screen & System Audio Recording** (only needed for screenshots), then run `computercub doctor` again to check.
+`computercub doctor` starts the app, and the first time macOS asks for two permissions. Turn on ComputerCub in **System Settings > Privacy & Security > Accessibility** (it can't do anything without that) and **Screen & System Audio Recording** (only needed for screenshots), then run `computercub doctor` again to check. macOS only hands Screen Recording to an app when it starts, so if you turn it on while ComputerCub is running, the next screenshot restarts it for you.
 
 It signs with your first Apple Development identity if you have one, so the permissions stick around when you rebuild. Without one it signs ad hoc and macOS asks again after every build.
 
