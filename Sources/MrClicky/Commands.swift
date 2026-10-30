@@ -33,39 +33,40 @@ struct Args {
     func has(_ k: String) -> Bool { flags[k] != nil }
 
     func at(_ i: Int, _ what: String) throws -> String {
-        guard i < pos.count else { throw MittsError("Missing \(what). See `mitts help`.") }
+        guard i < pos.count else { throw ClickyError("Missing \(what). See `mr-clicky help`.") }
         return pos[i]
     }
 }
 
 let helpText = """
-mitts: lets agents use the Mac's apps through the Accessibility API.
+Mr Clicky: computer use for your Mac. Agents use its apps through the Accessibility API.
 
-  mitts apps                            running apps
-  mitts windows [app]                   windows, with refs (w3), size and display
-  mitts snap <window> [--full] [--all]  what you can click or type in, with refs (e12);
-                                        after the first look, only what changed
-  mitts read <window|ref>               the words in a window or element
-  mitts click <ref> [--mouse] [--double]
-  mitts type <ref> <text> [--submit] [--keys]
-                                        replaces the field's text; passwords are refused
-  mitts press <window|ref> <keys>... [--front]
-                                        e.g. cmd+shift+g, return, escape, tab, down. Keys go
-                                        to the app in the background; if nothing happens,
-                                        --front brings the window forward just for them
-  mitts menu <app> [File > New Window]  list an app's menus, or pick an item
-  mitts scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
-  mitts drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
-  mitts move <window> <x> <y> [w h]     move (and resize) a window, in points from the
-                                        main display's top-left corner
-  mitts shot <window|ref> [--max 1600]  window-only PNG; prints the path, deleted after an hour
-  mitts handoff <window> <message> [--wait 300]
-                                        brings the window up with an "Over to you" panel, for
-                                        sign-ins, passkeys and anything else that only the
-                                        person at the Mac should do
-  mitts doctor                          permissions and displays
-  mitts clean                           delete screenshots and saved reads now
-  mitts quit                            stop the background app
+  mr-clicky apps                            running apps
+  mr-clicky windows [app]                   windows, with refs (w3), size and display
+  mr-clicky snap <window> [--full] [--all]  what you can click or type in, with refs
+                                            (e12); after the first look, only what changed
+  mr-clicky read <window|ref>               the words in a window or element
+  mr-clicky click <ref> [--mouse] [--double]
+  mr-clicky type <ref> <text> [--submit] [--keys]
+                                            replaces the field's text; passwords are refused
+  mr-clicky press <window|ref> <keys>... [--front]
+                                            e.g. cmd+shift+g, return, escape, tab, down. Keys
+                                            go to the app in the background; if nothing
+                                            happens, --front brings the window forward for them
+  mr-clicky menu <app> [File > New Window]  list an app's menus, or pick an item
+  mr-clicky scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
+  mr-clicky drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
+  mr-clicky move <window> <x> <y> [w h]     move (and resize) a window, in points from the
+                                            main display's top-left corner
+  mr-clicky shot <window|ref> [--max 1600]  window-only PNG; prints the path, deleted after
+                                            an hour
+  mr-clicky handoff <window> <message> [--wait 300]
+                                            brings the window up with an "Over to you" panel,
+                                            for sign-ins, passkeys and anything else that only
+                                            the person at the Mac should do
+  mr-clicky doctor                          permissions and displays
+  mr-clicky clean                           delete screenshots and saved reads now
+  mr-clicky quit                            stop the background app
 
 A window is w3, an app ("Finder"), an app and part of its title ("Chrome:Web Store"),
 or "front". Clicks, typing and keys answer with what changed, so there's no need to
@@ -75,7 +76,7 @@ snap again after each one.
 final class Commands {
     static let shared = Commands()
     let desk = Desktop.shared
-    private let work = DispatchQueue(label: "mitts.work")
+    private let work = DispatchQueue(label: "mr-clicky.work")
 
     func run(_ argv: [String]) -> Reply {
         guard let cmd = argv.first else { return Reply(ok: true, out: helpText) }
@@ -89,7 +90,7 @@ final class Commands {
                 // Hand Chrome back its normal accessibility mode before going.
                 work.sync { desk.relaxWeb(idleFor: 0) }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exit(0) }
-                return Reply(ok: true, out: "Mitts stopped.")
+                return Reply(ok: true, out: "Mr Clicky stopped.")
             default:
                 return Reply(ok: true, out: try work.sync { try dispatch(cmd, a) })
             }
@@ -107,10 +108,10 @@ final class Commands {
         if cmd == "doctor" { return doctor() }
         if cmd == "clean" {
             Shot.sweep(olderThan: 0)
-            return "Deleted Mitts' screenshots and saved reads."
+            return "Deleted Mr Clicky's screenshots and saved reads."
         }
         guard AXIsProcessTrusted() else {
-            throw MittsError("Mitts doesn't have Accessibility yet. System Settings › Privacy & Security › Accessibility, turn on Mitts, then try again.")
+            throw ClickyError("Mr Clicky doesn't have Accessibility yet. System Settings › Privacy & Security › Accessibility, turn on Mr Clicky, then try again.")
         }
         switch cmd {
         case "apps": return apps()
@@ -125,7 +126,7 @@ final class Commands {
         case "shot": return try shot(try a.at(0, "a window or ref"), max: Int(a.flags["max"] ?? "") ?? 1600)
         case "drag": return try drag(try a.at(0, "what to drag"), try a.at(1, "where to drop it"))
         case "move": return try move(try a.at(0, "a window"), Array(a.pos.dropFirst()))
-        default: throw MittsError("No command \"\(cmd)\". See `mitts help`.")
+        default: throw ClickyError("No command \"\(cmd)\". See `mr-clicky help`.")
         }
     }
 
@@ -133,8 +134,8 @@ final class Commands {
 
     private func doctor() -> String {
         var out = [
-            "Accessibility: " + (AXIsProcessTrusted() ? "on" : "off. System Settings › Privacy & Security › Accessibility, turn on Mitts"),
-            "Screen Recording: " + (CGPreflightScreenCaptureAccess() ? "on" : "off, only needed for `mitts shot`. System Settings › Privacy & Security › Screen & System Audio Recording, turn on Mitts"),
+            "Accessibility: " + (AXIsProcessTrusted() ? "on" : "off. System Settings › Privacy & Security › Accessibility, turn on Mr Clicky"),
+            "Screen Recording: " + (CGPreflightScreenCaptureAccess() ? "on" : "off, only needed for `mr-clicky shot`. System Settings › Privacy & Security › Screen & System Audio Recording, turn on Mr Clicky"),
             "Running from: \(Bundle.main.bundlePath) (pid \(getpid()))",
             "Displays:",
         ]
@@ -268,7 +269,7 @@ final class Commands {
             let actions = el.actions
             if actions.contains(kAXPressAction) {
                 let r = el.perform(kAXPressAction)
-                guard r == .success else { throw MittsError("Pressing \(ref) failed (AX error \(r.rawValue)). Try --mouse.") }
+                guard r == .success else { throw ClickyError("Pressing \(ref) failed (AX error \(r.rawValue)). Try --mouse.") }
                 return "Pressed \(ref)."
             }
             if ["AXRow", "AXCell", "AXOutlineRow"].contains(role), el.set(kAXSelectedAttribute, kCFBooleanTrue) == .success {
@@ -280,7 +281,7 @@ final class Commands {
             for alt in ["AXPick", "AXConfirm", "AXOpen"] where actions.contains(alt) {
                 if el.perform(alt) == .success { return "Did \(alt) on \(ref)." }
             }
-            throw MittsError("\(ref) has nothing to press (it offers: \(actions.joined(separator: ", "))). Try --mouse.")
+            throw ClickyError("\(ref) has nothing to press (it offers: \(actions.joined(separator: ", "))). Try --mouse.")
         }
     }
 
@@ -288,7 +289,7 @@ final class Commands {
         let (el, win) = try desk.lookup(ref)
         let role = el.string(kAXRoleAttribute) ?? ""
         if role == "AXSecureTextField" || el.string(kAXSubroleAttribute) == "AXSecureTextField" {
-            throw MittsError("\(ref) is a password field. Passwords stay with \(userName): use `mitts handoff \(desk.ref(for: win)) \"…\"`.")
+            throw ClickyError("\(ref) is a password field. Passwords stay with \(userName): use `mr-clicky handoff \(desk.ref(for: win)) \"…\"`.")
         }
         return try acting(win) {
             el.set(kAXFocusedAttribute, kCFBooleanTrue)
@@ -307,7 +308,7 @@ final class Commands {
     }
 
     private func press(_ target: String, _ combos: [String], front: Bool) throws -> String {
-        guard !combos.isEmpty else { throw MittsError("Which keys? e.g. `mitts press Finder cmd+shift+g`.") }
+        guard !combos.isEmpty else { throw ClickyError("Which keys? e.g. `mr-clicky press Finder cmd+shift+g`.") }
         let win: Win
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
             let (el, w) = try desk.lookup(target)
@@ -328,7 +329,7 @@ final class Commands {
     private func menu(_ appQuery: String, _ path: String?) throws -> String {
         let app = try desk.findApp(appQuery)
         let ax = AXUIElementCreateApplication(app.processIdentifier)
-        guard let bar = ax.element(kAXMenuBarAttribute) else { throw MittsError("\(app.localizedName ?? appQuery) has no menu bar.") }
+        guard let bar = ax.element(kAXMenuBarAttribute) else { throw ClickyError("\(app.localizedName ?? appQuery) has no menu bar.") }
         let parts = (path ?? "").split(separator: ">").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let norm = { (s: String) in s.lowercased().replacingOccurrences(of: "…", with: "...").trimmingCharacters(in: .whitespaces) }
         var items = bar.elements(kAXChildrenAttribute)
@@ -337,12 +338,12 @@ final class Commands {
             let titled = items.map { ($0, $0.string(kAXTitleAttribute) ?? "") }
             guard let (item, title) = titled.first(where: { norm($0.1) == norm(part) }) ?? titled.first(where: { norm($0.1).hasPrefix(norm(part)) }) else {
                 let have = titled.map(\.1).filter { !$0.isEmpty }.joined(separator: ", ")
-                throw MittsError("No \"\(part)\" in \(trail.isEmpty ? "the menu bar" : trail.joined(separator: " > ")). There's: \(have)")
+                throw ClickyError("No \"\(part)\" in \(trail.isEmpty ? "the menu bar" : trail.joined(separator: " > ")). There's: \(have)")
             }
             trail.append(title)
             let submenu = item.elements(kAXChildrenAttribute).first
             if i == parts.count - 1 && submenu == nil {
-                if (item.attr(kAXEnabledAttribute) as? Bool) == false { throw MittsError("\(trail.joined(separator: " > ")) is greyed out.") }
+                if (item.attr(kAXEnabledAttribute) as? Bool) == false { throw ClickyError("\(trail.joined(separator: " > ")) is greyed out.") }
                 // Menu items press fine without opening the menu.
                 if let win = try? desk.window(app.localizedName ?? appQuery) {
                     return try acting(win) {
@@ -389,14 +390,14 @@ final class Commands {
             el = win.el
         }
         guard let direction else {
-            guard isRef else { throw MittsError("Say up or down, e.g. `mitts scroll \(target) down`.") }
+            guard isRef else { throw ClickyError("Say up or down, e.g. `mr-clicky scroll \(target) down`.") }
             return try acting(win) {
                 el.perform("AXScrollToVisible")
                 return "Scrolled \(target) into view."
             }
         }
-        guard direction == "up" || direction == "down" else { throw MittsError("Scroll up or down.") }
-        guard let area = scrollArea(around: el) else { throw MittsError("Nothing scrolls there.") }
+        guard direction == "up" || direction == "down" else { throw ClickyError("Scroll up or down.") }
+        guard let area = scrollArea(around: el) else { throw ClickyError("Nothing scrolls there.") }
         return try acting(win) {
             let action = direction == "up" ? "AXScrollUpByPage" : "AXScrollDownByPage"
             if area.actions.contains(action), area.perform(action) == .success { return "Scrolled \(direction) a page." }
@@ -437,13 +438,13 @@ final class Commands {
     // the window comes forward, and the pointer goes back where it was afterwards.
     private func drag(_ from: String, _ to: String) throws -> String {
         let (src, win) = try desk.lookup(from)
-        guard let a = grabPoint(src) else { throw MittsError("Can't tell where \(from) is on screen.") }
+        guard let a = grabPoint(src) else { throw ClickyError("Can't tell where \(from) is on screen.") }
         let b: CGPoint
         if to.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
-            guard let p = grabPoint(try desk.lookup(to).el) else { throw MittsError("Can't tell where \(to) is on screen.") }
+            guard let p = grabPoint(try desk.lookup(to).el) else { throw ClickyError("Can't tell where \(to) is on screen.") }
             b = p
         } else {
-            guard let f = try desk.window(to).el.frame else { throw MittsError("Can't tell where \(to) is on screen.") }
+            guard let f = try desk.window(to).el.frame else { throw ClickyError("Can't tell where \(to) is on screen.") }
             b = CGPoint(x: f.midX, y: f.midY)
         }
         return try acting(win) {
@@ -452,7 +453,7 @@ final class Commands {
             for (p, name) in [(a, from), (b, to)] {
                 if let owner = Input.owner(at: p), owner != win.pid, name == from || desk.windowOwner(to) != owner {
                     let app = NSRunningApplication(processIdentifier: owner)?.localizedName ?? "another app"
-                    throw MittsError("\(app) is on top of \(name), so the drag would land there. Not dragging.")
+                    throw ClickyError("\(app) is on top of \(name), so the drag would land there. Not dragging.")
                 }
             }
             Input.drag(from: a, to: b)
@@ -485,11 +486,11 @@ final class Commands {
         let win = try desk.window(target)
         let v = numbers.compactMap(Double.init)
         guard v.count == 2 || v.count == 4 else {
-            throw MittsError("Give x and y (top-left, in points), and optionally width and height: `mitts move \(target) 100 80 1200 800`.")
+            throw ClickyError("Give x and y (top-left, in points), and optionally width and height: `mr-clicky move \(target) 100 80 1200 800`.")
         }
         var p = CGPoint(x: v[0], y: v[1])
         guard win.el.set(kAXPositionAttribute, AXValueCreate(.cgPoint, &p)!) == .success else {
-            throw MittsError("\(win.appName) wouldn't move that window.")
+            throw ClickyError("\(win.appName) wouldn't move that window.")
         }
         if v.count == 4 {
             var s = CGSize(width: v[2], height: v[3])
@@ -510,7 +511,7 @@ final class Commands {
     private func handoff(_ a: Args) throws -> String {
         let target = try a.at(0, "a window")
         let message = try a.at(1, "what \(userName) needs to do")
-        guard !Thread.isMainThread else { throw MittsError("handoff needs the Mitts app; run the installed `mitts`.") }
+        guard !Thread.isMainThread else { throw ClickyError("handoff needs the Mr Clicky app; run the installed `mr-clicky`.") }
         let (win, label) = try work.sync { () throws -> (Win, String) in
             let w = try desk.window(target)
             Input.bringForward(w)

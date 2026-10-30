@@ -244,7 +244,7 @@ enum Snapshot {
         }
         desk.signatures[win.id] = w.signatures
         var out = w.lines
-        if w.truncated { out.append("… stopped after \(w.visited) elements; `mitts read` or a narrower window helps") }
+        if w.truncated { out.append("… stopped after \(w.visited) elements; `mr-clicky read` or a narrower window helps") }
         return out
     }
 

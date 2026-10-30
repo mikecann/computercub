@@ -7,7 +7,7 @@ import ApplicationServices
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
 
-struct MittsError: Error, CustomStringConvertible {
+struct ClickyError: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
 }

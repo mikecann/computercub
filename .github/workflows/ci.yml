@@ -15,6 +15,6 @@ jobs:
       - name: Build
         run: swift build
       - name: Help works without any permissions
-        run: .build/debug/mitts help
+        run: .build/debug/mr-clicky help
       - name: Check shell syntax
         run: bash -n scripts/install.sh

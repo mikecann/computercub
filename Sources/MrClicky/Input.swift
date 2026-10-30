@@ -23,7 +23,7 @@ enum Input {
         var parts = combo.lowercased().split(separator: "+").map(String.init)
         if combo.hasSuffix("++") { parts.append("=") }  // cmd++ means cmd and the + key
         guard let key = parts.popLast(), let code = codes[key] else {
-            throw MittsError("Don't know the key in \"\(combo)\". Try things like cmd+shift+g, return, escape, tab, down, f5.")
+            throw ClickyError("Don't know the key in \"\(combo)\". Try things like cmd+shift+g, return, escape, tab, down, f5.")
         }
         var flags: CGEventFlags = []
         for m in parts {
@@ -33,7 +33,7 @@ enum Input {
             case "alt", "opt", "option": flags.insert(.maskAlternate)
             case "ctrl", "control": flags.insert(.maskControl)
             case "fn": flags.insert(.maskSecondaryFn)
-            default: throw MittsError("Don't know the modifier \"\(m)\" in \"\(combo)\".")
+            default: throw ClickyError("Don't know the modifier \"\(m)\" in \"\(combo)\".")
             }
         }
         return (code, flags)
@@ -44,7 +44,7 @@ enum Input {
         let src = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true),
               let up = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false) else {
-            throw MittsError("Couldn't make a key event. Does Mitts have Accessibility?")
+            throw ClickyError("Couldn't make a key event. Does Mr Clicky have Accessibility?")
         }
         down.flags = flags
         up.flags = flags
@@ -139,7 +139,7 @@ enum Input {
     }
 
     static func click(_ el: AXUIElement, in win: Win, double: Bool) throws {
-        guard let f = el.frame, f.width > 0, f.height > 0 else { throw MittsError("Can't tell where that is on screen.") }
+        guard let f = el.frame, f.width > 0, f.height > 0 else { throw ClickyError("Can't tell where that is on screen.") }
         let p = CGPoint(x: f.midX, y: f.midY)
         bringForward(win)
         usleep(300_000)
@@ -147,7 +147,7 @@ enum Input {
         if AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(p.x), Float(p.y), &hit) == .success,
            let hit, hit.pid != win.pid {
             let other = NSRunningApplication(processIdentifier: hit.pid)?.localizedName ?? "another app"
-            throw MittsError("\(other) is on top of that spot, so a click would land there. Not clicking.")
+            throw ClickyError("\(other) is on top of that spot, so a click would land there. Not clicking.")
         }
         let saved = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
