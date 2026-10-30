@@ -78,6 +78,36 @@ enum Input {
         AXUIElementCreateApplication(win.pid).set(kAXFocusedWindowAttribute, win.el)
     }
 
+    // Keys sent to an app go to its key window, whatever we asked for. Pointing it at ours
+    // from the background usually works, but not when ours is minimised or the key window
+    // sits on another Space: then cmd+w closed Mike's Downloads window instead. So check
+    // where keys will land, bring the window forward if that's what it takes, and send
+    // nothing if they still wouldn't reach it. Returns whether it had to come forward.
+    @discardableResult
+    static func toWindow(_ win: Win, front: Bool, _ body: () throws -> Void) throws -> Bool {
+        if (win.el.attr(kAXMinimizedAttribute) as? Bool) == true {
+            throw CubError("That window is minimised, so keys would go to another one. Not sending them.")
+        }
+        focus(win)
+        usleep(50_000)
+        if !front && aimed(win) {
+            try body()
+            return false
+        }
+        try inFront(win) {
+            guard aimed(win) else {
+                throw CubError("\(win.appName) won't point keys at that window, so they'd land in another one. Not sending them.")
+            }
+            try body()
+        }
+        return !front
+    }
+
+    static func aimed(_ win: Win) -> Bool {
+        guard let key = AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute) else { return false }
+        return CFEqual(key, win.el)
+    }
+
     // Some keys only work in the active app (Chrome's cmd+w needs a key window, which an
     // app in the background doesn't have). This brings the window forward just for
     // them, then gives Mike back whatever he had in front.

@@ -305,12 +305,15 @@ final class Commands {
             // Setting the value is instant and doesn't depend on focus; real keys are
             // for fields that only listen to key events.
             if keys || el.set(kAXValueAttribute, text as CFString) != .success {
-                Input.focus(win)
-                try Input.key("cmd+a", pid: win.pid)
-                try Input.type(text, pid: win.pid)
+                try Input.toWindow(win, front: false) {
+                    try Input.key("cmd+a", pid: win.pid)
+                    try Input.type(text, pid: win.pid)
+                    if submit { try Input.key("return", pid: win.pid) }
+                }
                 how = " with keys"
+            } else if submit {
+                try Input.toWindow(win, front: false) { try Input.key("return", pid: win.pid) }
             }
-            if submit { try Input.key("return", pid: win.pid) }
             return "Typed into \(ref)\(how)\(submit ? " and pressed Return" : "")."
         }
     }
@@ -327,10 +330,9 @@ final class Commands {
         }
         for c in combos { _ = try Input.parse(c) }  // fail before sending any of them
         return try acting(win) {
-            Input.focus(win)
-            let send = { for c in combos { try Input.key(c, pid: win.pid) } }
-            if front { try Input.inFront(win, send) } else { try send() }
-            return "Pressed \(combos.joined(separator: " "))\(front ? " with the window in front" : "")."
+            let moved = try Input.toWindow(win, front: front) { for c in combos { try Input.key(c, pid: win.pid) } }
+            let how = front ? " with the window in front" : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
+            return "Pressed \(combos.joined(separator: " "))\(how)."
         }
     }
 
@@ -414,8 +416,7 @@ final class Commands {
                 let next = min(1, max(0, now.doubleValue + (direction == "up" ? -0.25 : 0.25)))
                 if bar.set(kAXValueAttribute, NSNumber(value: next)) == .success { return "Scrolled \(direction)." }
             }
-            Input.focus(win)
-            try Input.key(direction == "up" ? "pageup" : "pagedown", pid: win.pid)
+            try Input.toWindow(win, front: false) { try Input.key(direction == "up" ? "pageup" : "pagedown", pid: win.pid) }
             return "Pressed \(direction == "up" ? "Page Up" : "Page Down")."
         }
     }
