@@ -156,8 +156,13 @@ enum Input {
     // Some keys only work in the active app (Chrome's cmd+w needs a key window, which an
     // app in the background doesn't have). This brings the window forward just for
     // them, then gives Mike back whatever he had in front.
+    //
+    // While it's borrowed, Mike's own typing would land in that window: a stray letter
+    // went into a TextEdit document, and in System Settings a space flips the focused
+    // switch. So his keys are held meanwhile and replayed once he has his app back.
     static func inFront<T>(_ win: Win, _ body: () throws -> T) rethrows -> T {
         let previous = NSWorkspace.shared.frontmostApplication
+        let hold = KeyHold.start()
         bringForward(win)
         // Usually a third of a second, but a busy Mac took over one for System Settings.
         for i in 0..<15 {
@@ -173,7 +178,11 @@ enum Input {
                 // the window's app in front. activate() is what actually hands it back.
                 AXUIElementCreateApplication(previous.processIdentifier).set(kAXFrontmostAttribute, kCFBooleanTrue)
                 previous.activate()
+                for _ in 0..<10 where NSWorkspace.shared.frontmostApplication?.processIdentifier != previous.processIdentifier {
+                    usleep(100_000)
+                }
             }
+            for e in hold?.release() ?? [] { e.post(tap: .cghidEventTap) }
         }
         return try body()
     }
@@ -235,8 +244,18 @@ enum Input {
         }
         // Otherwise move each scroll area it's in, innermost first, until it's inside.
         for area in scrollAreas(around: el) {
-            centre(el, in: area, vertical: true)
-            centre(el, in: area, vertical: false)
+            // The bar where there is one. SwiftUI glides to the new spot, so wait for the
+            // element to stop before judging, and try again from where it landed.
+            if area.element(kAXVerticalScrollBarAttribute) != nil || area.element(kAXHorizontalScrollBarAttribute) != nil {
+                for _ in 0..<3 where !inside(el, area) {
+                    centre(el, in: area, vertical: true)
+                    centre(el, in: area, vertical: false)
+                    settle(el)
+                }
+                continue
+            }
+            // Page actions only where there's no bar: SwiftUI answers a page down by
+            // jumping to the top.
             for _ in 0..<40 {
                 guard let f = el.frame, let a = area.frame else { break }
                 let action: String
@@ -245,16 +264,16 @@ enum Input {
                 else if f.midX > a.maxX { action = "AXScrollRightByPage" }
                 else if f.midX < a.minX { action = "AXScrollLeftByPage" }
                 else { break }
-                // SwiftUI answers a page down by jumping to the top, so watch the bar too.
-                let bar = area.element(kAXVerticalScrollBarAttribute)
-                let was = (bar?.attr(kAXValueAttribute) as? NSNumber)?.doubleValue
                 guard area.perform(action) == .success else { break }
                 usleep(120_000)
                 if el.frame == f { break }  // Didn't move, so it won't.
-                if let was, let now = (bar?.attr(kAXValueAttribute) as? NSNumber)?.doubleValue,
-                   action == "AXScrollDownByPage" ? now < was : action == "AXScrollUpByPage" ? now > was : false { break }
             }
         }
+    }
+
+    private static func inside(_ el: AXUIElement, _ area: AXUIElement) -> Bool {
+        guard let f = el.frame, let a = area.frame else { return false }
+        return a.contains(CGPoint(x: f.midX, y: f.midY))
     }
 
     // Sets the scroll bar so the element sits in the middle of the area. A bar's value runs
@@ -376,5 +395,70 @@ enum Input {
             usleep(60_000)
             CGWarpMouseCursorPosition(saved)
         }
+    }
+}
+
+// Holds the keyboard's events for a moment, so Mike's typing doesn't land in a window
+// ComputerCub has borrowed. Only events from elsewhere are held (his keyboard, his
+// dictation app); ComputerCub's own keys pass. The tap gives up after 5 s whatever
+// happens, and if macOS disables it, keys just flow as normal.
+final class KeyHold {
+    private var tap: CFMachPort?
+    private var loop: CFRunLoop?
+    private var held: [CGEvent] = []
+    private let lock = NSLock()
+    private let ready = DispatchSemaphore(value: 0)
+
+    static func start() -> KeyHold? {
+        let h = KeyHold()
+        Thread { h.run() }.start()
+        h.ready.wait()
+        return h.tap == nil ? nil : h
+    }
+
+    private func run() {
+        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
+        let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        tap = CGEvent.tapCreate(tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
+                                callback: { _, type, e, refcon in
+                                    Unmanaged<KeyHold>.fromOpaque(refcon!).takeUnretainedValue().handle(type, e)
+                                }, userInfo: Unmanaged.passUnretained(self).toOpaque())
+        guard let tap else { ready.signal(); return }
+        loop = CFRunLoopGetCurrent()
+        CFRunLoopAddSource(loop, CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        ready.signal()
+        CFRunLoopRunInMode(.defaultMode, 5, false)
+        stopTap()
+    }
+
+    private func handle(_ type: CGEventType, _ e: CGEvent) -> Unmanaged<CGEvent>? {
+        guard type == .keyDown || type == .keyUp || type == .flagsChanged,
+              e.getIntegerValueField(.eventSourceUnixProcessID) != Int64(getpid()),
+              let copy = e.copy() else { return Unmanaged.passUnretained(e) }
+        lock.lock()
+        held.append(copy)
+        lock.unlock()
+        return nil
+    }
+
+    private func stopTap() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let t = tap else { return }
+        CGEvent.tapEnable(tap: t, enable: false)
+        CFMachPortInvalidate(t)
+        tap = nil
+    }
+
+    // Lets the keyboard go and hands back what was typed meanwhile, to post again.
+    func release() -> [CGEvent] {
+        stopTap()
+        if let loop { CFRunLoopStop(loop) }
+        lock.lock()
+        defer { lock.unlock() }
+        let out = held
+        held = []
+        return out
     }
 }
