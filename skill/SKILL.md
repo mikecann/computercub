@@ -11,11 +11,13 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 1. `computercub windows [app]` to find the window. Name it as `w3`, `Finder`, or an app plus
    part of its title: `"Chrome:Michael"` (Chrome titles end with the profile name).
 2. `computercub snap <window>` lists controls as `e12 button "Save"`. Later snaps show only
-   what changed. `computercub read <window>` gives the words, for reading values.
+   what changed. On a long pane, `computercub snap <window> --find Privacy` lists just the
+   matching controls. `computercub read <window>` gives the words, for reading values.
 3. `computercub click e12`, `computercub type e7 "text" [--submit]`, `computercub press <window> cmd+shift+g`,
    `computercub menu <app> "File > New Window"`, `computercub drag e19 e18` (a file onto a folder),
-   `computercub move <window> x y [w h]`. Each answers with what changed, so don't snap again
-   after it.
+   `computercub move <window> x y [w h]`, `computercub scroll <window> down` (says how far down it
+   got). Each answers with what changed, so don't snap again after it. In a file picker,
+   cmd+shift+g opens Go to Folder for hidden places like ~/Library.
 4. Cmd shortcuts bring the window forward by themselves. If another key does nothing in a
    background app, retry with `--front`. If a click needs a real mouse, `--mouse`. Both
    briefly bring the window forward. `--mouse` scrolls the control into view first and

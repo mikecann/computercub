@@ -56,6 +56,7 @@ It signs with your first Apple Development identity if you have one, so the perm
 ```bash
 computercub windows                                 # every app's windows, with refs and which display
 computercub snap Finder                             # what you can click or type in, as e12-style refs
+computercub snap "System Settings" --find Privacy   # just the controls that mention Privacy, however far down
 computercub click e23
 computercub press w2 cmd+shift+g                    # keys go to the app, even in the background
 computercub type e57 "~/Downloads" --submit
@@ -74,9 +75,9 @@ This is what an agent sees and gets back, in Finder:
 
 ![An agent looking at a Finder window through ComputerCub: a short list of rows with refs, a click on one of them, and just the lines that changed](docs/demo.png)
 
-- **Windows** are named by what they are: an app (`Finder`), an app and part of a title (`"Chrome:Web Store"`), or the `w3` ref from `computercub windows`, which sticks to that window while it's open. Chrome puts the profile name at the end of its window titles, so `"Chrome:Work"` finds the right profile.
+- **Windows** are named by what they are: an app (`Finder`), an app and part of a title (`"Chrome:Web Store"`), or the `w3` ref from `computercub windows`, which sticks to that window while it's open, even if ComputerCub restarts. Chrome puts the profile name at the end of its window titles, so `"Chrome:Work"` finds the right profile.
 - **Refs** like `e12` stay on the same control between looks. After the first `snap` you only get what changed, and clicking, typing and keys answer with that diff, plus any new window or sheet the app opened, so there's no need to look again.
-- **No mouse by default.** Clicks go through the Accessibility API, so they don't move your pointer or bring anything to the front. `--mouse` does a real click for the odd control that needs one, and cmd shortcuts like cmd+w, which macOS only fires in the active app, bring the window forward for a moment and then give you back whatever you had in front. `press --front` does the same for any other key that needs it.
+- **No mouse by default.** Clicks go through the Accessibility API, so they don't move your pointer or bring anything to the front. `--mouse` does a real click for the odd control that needs one, and cmd shortcuts like cmd+w, which macOS only fires in the active app, bring the window forward for a moment and then give you back whatever you had in front. `press --front` does the same for any other key that needs it. Keys for a sheet (a Save or Open panel) come forward too, because those panels run in their own process and only take keys from the front. Anything you type during that moment is held and lands in your own app once it's back in front.
 - **Passwords** are masked in snapshots, and `computercub type` refuses to type into password fields. That's what `handoff` is for.
 - **Screenshots** are of one window or one element, never the whole screen. They're shrunk to 1600 px and deleted after an hour, or straight away with `computercub clean`.
 
