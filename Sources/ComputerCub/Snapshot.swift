@@ -224,19 +224,29 @@ enum Snapshot {
             if parts.isEmpty { parts = Array(icons.prefix(2)) }
         }
 
-        private func gatherText(_ els: [AXUIElement], into parts: inout [String], icons: inout [String], depth: Int) {
+        private func gatherText(_ els: [AXUIElement], into parts: inout [String], icons: inout [String], depth: Int, max: Int = 3) {
             guard depth < 4 else { return }
-            for el in els where parts.count < 3 {
-                let v = el.values([kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXChildrenAttribute])
+            for el in els where parts.count < max {
+                let v = el.values([kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXChildrenAttribute, kAXIdentifierAttribute])
                 let role = v[kAXRoleAttribute] as? String ?? ""
-                if role == "AXStaticText" || role == "AXTextField" {
+                if role == "AXList", v[kAXDescriptionAttribute] as? String == "path" {
+                    // A path control (Go to Folder's suggestions) is one word per folder, so
+                    // the first three are the same on every row. Its identifier is the path.
+                    if let path = v[kAXIdentifierAttribute] as? String, path.hasPrefix("/") {
+                        parts.append(clip((path as NSString).abbreviatingWithTildeInPath, 80))
+                    } else {
+                        var words: [String] = []
+                        gatherText(v[kAXChildrenAttribute] as? [AXUIElement] ?? [], into: &words, icons: &icons, depth: depth + 1, max: 40)
+                        if !words.isEmpty { parts.append(clip(words.joined(separator: "/"), 80)) }
+                    }
+                } else if role == "AXStaticText" || role == "AXTextField" {
                     if let s = (v[kAXValueAttribute] as? String) ?? (v[kAXTitleAttribute] as? String), !s.trimmingCharacters(in: .whitespaces).isEmpty {
                         parts.append(clip(s, 50))
                     }
                 } else if role == "AXImage" {
                     if let s = v[kAXDescriptionAttribute] as? String, !s.isEmpty { icons.append(clip(s, 30)) }
                 } else {
-                    gatherText(v[kAXChildrenAttribute] as? [AXUIElement] ?? [], into: &parts, icons: &icons, depth: depth + 1)
+                    gatherText(v[kAXChildrenAttribute] as? [AXUIElement] ?? [], into: &parts, icons: &icons, depth: depth + 1, max: max)
                 }
             }
         }
