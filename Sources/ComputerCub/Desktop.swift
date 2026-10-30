@@ -26,6 +26,8 @@ final class Desktop {
     private var reservedElements = 0, firstElement = 1
     private var webTurnedOn: Set<pid_t> = []
     var lastLines: [CGWindowID: [String]] = [:]
+    // Who's running the current command, for the marker on the window it uses.
+    var agent: String?
 
     // The service gets restarted under agents' feet (a reinstall pkills it), and a fresh
     // count would hand the same window a new ref: w5, then w3, then w1. CGWindowIDs outlive
@@ -112,7 +114,7 @@ final class Desktop {
         guard let w = windows(of: app).first(where: { $0.id == id }) else {
             throw CubError("The window that had \(ref) has closed.")
         }
-        return w
+        return try marked(w)
     }
 
     func apps() -> [NSRunningApplication] {
@@ -177,9 +179,16 @@ final class Desktop {
             guard !matches.isEmpty else {
                 throw CubError("No \(name) window titled like \"\(titleQuery)\". Its windows: \(wins.map { "\"\(clip($0.title, 60))\"" }.joined(separator: ", "))")
             }
-            return preferFocused(matches, app)
+            return try marked(preferFocused(matches, app))
         }
-        return preferFocused(wins, app)
+        return try marked(preferFocused(wins, app))
+    }
+
+    // Every command that uses a window comes through here, so this is where the window
+    // gets its "agent at work" mark, and where a stop from Mike is enforced.
+    private func marked(_ w: Win) throws -> Win {
+        try Marks.shared.use(w.id, agent: agent)
+        return w
     }
 
     private func preferFocused(_ wins: [Win], _ app: NSRunningApplication) -> Win {

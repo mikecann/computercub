@@ -63,7 +63,7 @@ enum Service {
         guard let line = Wire.readLine(c),
               let req = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let args = req["args"] as? [String] else { return }
-        let reply = Commands.shared.run(args)
+        let reply = Commands.shared.run(args, agent: req["agent"] as? String)
         Wire.send(c, ["ok": reply.ok, "out": reply.out, "restart": reply.restart])
     }
 }
@@ -77,7 +77,7 @@ enum Client {
         // A dev build outside the app bundle has no app to hold the grants, so it runs
         // in-process (and only works if whatever started it has them).
         guard let app = appBundle(), !args.contains("--local") else {
-            return finish(Commands.shared.run(args.filter { $0 != "--local" }))
+            return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: Agent.current()))
         }
         guard var reply = call(args, app: app) else { return 1 }
         // Granting Screen Recording while the app is running doesn't reach it until it
@@ -112,7 +112,9 @@ enum Client {
         defer { close(fd) }
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-        Wire.send(fd, ["args": args, "cwd": FileManager.default.currentDirectoryPath])
+        var req: [String: Any] = ["args": args, "cwd": FileManager.default.currentDirectoryPath]
+        if let agent = Agent.current() { req["agent"] = agent }
+        Wire.send(fd, req)
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
             // Almost always the app being stopped mid-command, by a reinstall or `computercub quit`.

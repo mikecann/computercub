@@ -71,6 +71,8 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               brings the window up with an "Over to you" panel,
                                               for sign-ins, passkeys and anything else that only
                                               the person at the Mac should do
+  computercub resume                          after \(userName) clicks stop on a window's
+                                              marker, carry on there; only when they say so
   computercub doctor                          permissions and displays
   computercub setup                           the window that walks through the permissions
   computercub clean                           delete screenshots and saved reads now
@@ -86,14 +88,14 @@ final class Commands {
     let desk = Desktop.shared
     private let work = DispatchQueue(label: "computercub.work")
 
-    func run(_ argv: [String]) -> Reply {
+    func run(_ argv: [String], agent: String? = nil) -> Reply {
         guard let cmd = argv.first else { return Reply(ok: true, out: helpText) }
         let a = Args(Array(argv.dropFirst()))
         do {
             switch cmd {
             case "help", "-h", "--help": return Reply(ok: true, out: helpText)
             // Waits for Mike outside the work queue, so other commands still run meanwhile.
-            case "handoff": return Reply(ok: true, out: try handoff(a))
+            case "handoff": return Reply(ok: true, out: try handoff(a, agent: agent))
             case "setup":
                 guard !Thread.isMainThread else { throw CubError("setup needs the ComputerCub app; run the installed `computercub`.") }
                 DispatchQueue.main.async { SetupWindowController.shared.show() }
@@ -103,8 +105,14 @@ final class Commands {
                 work.sync { desk.relaxWeb(idleFor: 0) }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exit(0) }
                 return Reply(ok: true, out: "ComputerCub stopped.")
+            case "resume":
+                let n = Marks.shared.resume()
+                return Reply(ok: true, out: n == 0 ? "Nothing was stopped." : "Lifted \(userName)'s stop on \(n == 1 ? "1 window" : "\(n) windows").")
             default:
-                return Reply(ok: true, out: try work.sync { try dispatch(cmd, a) })
+                return Reply(ok: true, out: try work.sync {
+                    desk.agent = agent
+                    return try dispatch(cmd, a)
+                })
             }
         } catch let e as CubError {
             return Reply(ok: false, out: e.description, restart: e.restart)
@@ -656,13 +664,16 @@ final class Commands {
         return try Shot.capture(try desk.window(target), crop: nil, maxSide: max)
     }
 
-    private func handoff(_ a: Args) throws -> String {
+    private func handoff(_ a: Args, agent: String?) throws -> String {
         let target = try a.at(0, "a window")
         let message = try a.at(1, "what \(userName) needs to do")
         guard !Thread.isMainThread else { throw CubError("handoff needs the ComputerCub app; run the installed `computercub`.") }
         if screenLocked { throw CubError(ScreenLock.refusal(user: userName)) }
         let (win, label) = try work.sync { () throws -> (Win, String) in
+            desk.agent = agent
             let w = try desk.window(target)
+            // It's Mike's turn in there, so the "agent at work" mark comes off.
+            Marks.shared.hide(w.id)
             Input.bringForward(w)
             if desk.lastLines[w.id] == nil { desk.lastLines[w.id] = Snapshot.lines(w, desk) }
             return (w, desk.header(w))

@@ -35,4 +35,7 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
 
+The window you're in shows Mike a blue outline with a bear peering over it. If a command says he
+clicked stop, stop and ask him. Run `computercub resume` only once he says carry on.
+
 Ask Mike before posting, sending, buying, deleting or changing settings or accounts.
