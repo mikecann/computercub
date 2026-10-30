@@ -289,6 +289,7 @@ final class Commands {
     private func acting(_ win: Win, settle: Bool = true, _ body: () throws -> String) throws -> String {
         let before = Set(desk.windows(of: win.app).map(\.id))
         if desk.lastLines[win.id] == nil { desk.lastLines[win.id] = Snapshot.lines(win, desk) }
+        let earlier = sheetElsewhere(win)
         var out = [try body()]
         usleep(250_000)
         if win.el.isAlive {
@@ -311,7 +312,27 @@ final class Commands {
             desk.lastLines[w.id] = lines
             out.append("New window: \(desk.header(w))\n" + lines.joined(separator: "\n"))
         }
+        if let earlier {
+            if earlier.sheet.isAlive { out.append("\(desk.ref(for: earlier.host)) still has a sheet open. Keys pointed at \(desk.ref(for: win)) don't reach it; point them at \(desk.ref(for: earlier.host)).") }
+        } else if let now = sheetElsewhere(win) {
+            let lines = Snapshot.lines(now.host, desk)
+            let d = Snapshot.diff(desk.lastLines[now.host.id], lines)
+            desk.lastLines[now.host.id] = lines
+            out.append("A sheet opened on another window: \(desk.header(now.host))\n\(d.text)")
+        }
         return out.joined(separator: "\n")
+    }
+
+    // The sheet holding the app's keys, if it's on a window other than this one. Finder
+    // puts Go to Folder on a browser window even when cmd+shift+g was pressed at a Get Info
+    // window, and from there Escape meant for "the panel" went to the wrong window.
+    private func sheetElsewhere(_ win: Win) -> (sheet: AXUIElement, host: Win)? {
+        guard let sheet = AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute),
+              sheet.string(kAXRoleAttribute) == kAXSheetRole else { return nil }
+        var top = sheet.element(kAXParentAttribute)
+        for _ in 0..<4 where top?.string(kAXRoleAttribute) == kAXSheetRole { top = top?.element(kAXParentAttribute) }
+        guard let top, !CFEqual(top, win.el), let host = desk.windows(of: win.app).first(where: { CFEqual($0.el, top) }) else { return nil }
+        return (sheet, host)
     }
 
     private func click(_ ref: String, mouse: Bool, double: Bool) throws -> String {
