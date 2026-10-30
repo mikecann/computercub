@@ -16,9 +16,10 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    `computercub menu <app> "File > New Window"`, `computercub drag e19 e18` (a file onto a folder),
    `computercub move <window> x y [w h]`. Each answers with what changed, so don't snap again
    after it.
-4. If a key does nothing in a background app, retry with `--front`. If a click needs a
-   real mouse, `--mouse`. Both briefly bring the window forward. `--mouse` scrolls the
-   control into view first and won't click if something else would catch it.
+4. Cmd shortcuts bring the window forward by themselves. If another key does nothing in a
+   background app, retry with `--front`. If a click needs a real mouse, `--mouse`. Both
+   briefly bring the window forward. `--mouse` scrolls the control into view first and
+   won't click if something else would catch it.
 5. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
 6. `computercub shot <window|ref>` only when you need to see it. It's window-only; run

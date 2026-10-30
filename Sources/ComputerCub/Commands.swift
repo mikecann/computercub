@@ -52,8 +52,9 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               replaces the field's text; passwords are refused
   computercub press <window|ref> <keys>... [--front]
                                               e.g. cmd+shift+g, return, escape, tab, down. Keys
-                                              go to the app in the background; if nothing
-                                              happens, --front brings the window forward for them
+                                              go to the app in the background (cmd shortcuts
+                                              bring the window forward); if nothing happens,
+                                              --front brings it forward for any key
   computercub menu <app> [File > New Window]  list an app's menus, or pick an item
   computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
   computercub drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
@@ -329,9 +330,16 @@ final class Commands {
             win = try desk.window(target)
         }
         for c in combos { _ = try Input.parse(c) }  // fail before sending any of them
+        // Cmd shortcuts are menu key equivalents, and macOS only fires those in the active
+        // app: Finder ignores cmd+w and cmd+shift+g sent to it in the background, and
+        // Chrome cmd+w. So they come forward without needing --front.
+        let shortcut = !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier
+            && combos.contains { $0.lowercased().split(separator: "+").dropLast().contains { $0 == "cmd" || $0 == "command" } }
         return try acting(win) {
-            let moved = try Input.toWindow(win, front: front) { for c in combos { try Input.key(c, pid: win.pid) } }
-            let how = front ? " with the window in front" : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
+            let moved = try Input.toWindow(win, front: front || shortcut) { for c in combos { try Input.key(c, pid: win.pid) } }
+            let how = front ? " with the window in front"
+                : shortcut ? " with the window brought forward (cmd shortcuts only work in the active app)"
+                : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
             return "Pressed \(combos.joined(separator: " "))\(how)."
         }
     }

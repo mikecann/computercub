@@ -95,8 +95,18 @@ enum Input {
             return false
         }
         try inFront(win) {
+            // An app that's just come forward can take a moment to settle on a key window.
+            if !aimed(win) {
+                focus(win)
+                usleep(250_000)
+            }
             guard aimed(win) else {
-                throw CubError("\(win.appName) won't point keys at that window, so they'd land in another one. Not sending them.")
+                // Some panels (Finder's Go to Folder) take the keys without being in the
+                // app's AX window list, so they're invisible to snap; say so.
+                let key = AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute)
+                let other = key?.string(kAXTitleAttribute).flatMap { $0.isEmpty ? nil : "\"\($0)\"" }
+                    ?? "a panel or popup that isn't in its window list (Escape usually closes it)"
+                throw CubError("\(win.appName)'s keys are going to \(other), not that window. Not sending them.")
             }
             try body()
         }
@@ -118,7 +128,10 @@ enum Input {
         defer {
             usleep(250_000)
             if let previous, previous.processIdentifier != win.pid {
+                // AXFrontmost reports success here but macOS often ignores it, leaving
+                // the window's app in front. activate() is what actually hands it back.
                 AXUIElementCreateApplication(previous.processIdentifier).set(kAXFrontmostAttribute, kCFBooleanTrue)
+                previous.activate()
             }
         }
         return try body()

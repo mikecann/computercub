@@ -76,7 +76,7 @@ This is what an agent sees and gets back, in Finder:
 
 - **Windows** are named by what they are: an app (`Finder`), an app and part of a title (`"Chrome:Web Store"`), or the `w3` ref from `computercub windows`, which sticks to that window while it's open. Chrome puts the profile name at the end of its window titles, so `"Chrome:Work"` finds the right profile.
 - **Refs** like `e12` stay on the same control between looks. After the first `snap` you only get what changed, and clicking, typing and keys answer with that diff, plus any new window or sheet the app opened, so there's no need to look again.
-- **No mouse by default.** Clicks go through the Accessibility API, so they don't move your pointer or bring anything to the front. `--mouse` does a real click for the odd control that needs one, and `press --front` brings the window forward for keys that only work in the active app (Chrome's cmd+w is one), then gives you back whatever you had in front.
+- **No mouse by default.** Clicks go through the Accessibility API, so they don't move your pointer or bring anything to the front. `--mouse` does a real click for the odd control that needs one, and cmd shortcuts like cmd+w, which macOS only fires in the active app, bring the window forward for a moment and then give you back whatever you had in front. `press --front` does the same for any other key that needs it.
 - **Passwords** are masked in snapshots, and `computercub type` refuses to type into password fields. That's what `handoff` is for.
 - **Screenshots** are of one window or one element, never the whole screen. They're shrunk to 1600 px and deleted after an hour, or straight away with `computercub clean`.
 
