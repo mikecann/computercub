@@ -138,16 +138,130 @@ enum Input {
         }
     }
 
-    static func click(_ el: AXUIElement, in win: Win, double: Bool) throws {
-        guard let f = el.frame, f.width > 0, f.height > 0 else { throw CubError("Can't tell where that is on screen.") }
+    // An element scrolled out of its list still reports a frame, just one off past the
+    // edge of the window (or of every display). A click there lands on whatever is on
+    // screen instead: System Settings' sidebar, say. So scroll it in first.
+    static func reveal(_ el: AXUIElement, in win: Win) {
+        if shown(el, in: win) { return }
+        defer { settle(el) }
+        // Exact where offered, but SwiftUI (System Settings) says unsupported.
+        if el.perform("AXScrollToVisible") == .success {
+            settle(el)
+            if shown(el, in: win) { return }
+        }
+        // Otherwise move each scroll area it's in, innermost first, until it's inside.
+        for area in scrollAreas(around: el) {
+            centre(el, in: area, vertical: true)
+            centre(el, in: area, vertical: false)
+            for _ in 0..<40 {
+                guard let f = el.frame, let a = area.frame else { break }
+                let action: String
+                if f.midY > a.maxY { action = "AXScrollDownByPage" }
+                else if f.midY < a.minY { action = "AXScrollUpByPage" }
+                else if f.midX > a.maxX { action = "AXScrollRightByPage" }
+                else if f.midX < a.minX { action = "AXScrollLeftByPage" }
+                else { break }
+                guard area.perform(action) == .success else { break }
+                usleep(120_000)
+                if el.frame == f { break }  // Didn't move, so it won't.
+            }
+        }
+    }
+
+    // Sets the scroll bar so the element sits in the middle of the area. A bar's value runs
+    // 0 to 1 over the scrollable distance, the content's length less the visible length.
+    // System Settings' SwiftUI lists refuse the page actions but take this.
+    private static func centre(_ el: AXUIElement, in area: AXUIElement, vertical: Bool) {
+        guard let f = el.frame, let a = area.frame,
+              vertical ? (f.midY < a.minY || f.midY > a.maxY) : (f.midX < a.minX || f.midX > a.maxX),
+              let bar = area.element(vertical ? kAXVerticalScrollBarAttribute : kAXHorizontalScrollBarAttribute),
+              let now = (bar.attr(kAXValueAttribute) as? NSNumber)?.doubleValue else { return }
+        var content = CGSize.zero
+        if let v = area.attr("AXContentSize"), CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgSize, &content)
+        } else {
+            content = area.elements(kAXChildrenAttribute).compactMap(\.frame).reduce(CGRect.null) { $0.union($1) }.size
+        }
+        let range = vertical ? content.height - a.height : content.width - a.width
+        guard range > 0 else { return }
+        let off = vertical ? f.midY - a.midY : f.midX - a.midX
+        bar.set(kAXValueAttribute, NSNumber(value: min(1, max(0, now + Double(off / range)))))
+        usleep(150_000)
+    }
+
+    // Lists animate when scrolled. Some (SwiftUI) report frames mid-glide; others
+    // (Finder) report the end straight away but swallow a click until the glide's done.
+    private static func settle(_ el: AXUIElement) {
+        defer { usleep(350_000) }
+        var last = el.frame
+        for _ in 0..<10 {
+            usleep(100_000)
+            let now = el.frame
+            if now == last { return }
+            last = now
+        }
+    }
+
+    private static func scrollAreas(around el: AXUIElement) -> [AXUIElement] {
+        var out: [AXUIElement] = [], n = el.element(kAXParentAttribute)
+        while let p = n, out.count < 10 {
+            let role = p.string(kAXRoleAttribute)
+            if role == "AXWindow" { break }
+            if role == "AXScrollArea" { out.append(p) }
+            n = p.element(kAXParentAttribute)
+        }
+        return out
+    }
+
+    // Whether the element's middle is inside its window, every scroll area it's in, and
+    // a display. AX frames and CGDisplayBounds share one top-left space across displays.
+    static func shown(_ el: AXUIElement, in win: Win) -> Bool {
+        guard let f = el.frame, f.width > 0, f.height > 0 else { return false }
         let p = CGPoint(x: f.midX, y: f.midY)
+        if let w = win.el.frame, !w.contains(p) { return false }
+        for a in scrollAreas(around: el) {
+            if let r = a.frame, !r.contains(p) { return false }
+        }
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16), n: UInt32 = 0
+        CGGetActiveDisplayList(16, &ids, &n)
+        return ids.prefix(Int(n)).contains { CGDisplayBounds($0).contains(p) }
+    }
+
+    // True when what's on top at a point is the element, something inside it, or one of
+    // its containers (some controls don't hit-test themselves, so their group answers).
+    // Same app isn't enough: a stale frame once clicked System Settings' own sidebar.
+    static func lands(on el: AXUIElement, hit: AXUIElement) -> Bool {
+        func chain(_ start: AXUIElement) -> [AXUIElement] {
+            var out: [AXUIElement] = [], n: AXUIElement? = start
+            while let x = n, out.count < 30, x.string(kAXRoleAttribute) != "AXWindow" {
+                out.append(x)
+                n = x.element(kAXParentAttribute)
+            }
+            return out
+        }
+        return chain(hit).contains { CFEqual($0, el) } || chain(el).contains { CFEqual($0, hit) }
+    }
+
+    static func click(_ el: AXUIElement, in win: Win, double: Bool) throws {
         bringForward(win)
         usleep(300_000)
+        reveal(el, in: win)
+        // Read the frame now, not before: raising and scrolling both move things.
+        guard let f = el.frame, f.width > 0, f.height > 0 else { throw CubError("Can't tell where that is on screen.") }
+        guard shown(el, in: win) else {
+            throw CubError("That's scrolled out of view and wouldn't scroll in, so a click would land on something else. Not clicking.")
+        }
+        let p = CGPoint(x: f.midX, y: f.midY)
         var hit: AXUIElement?
         if AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(p.x), Float(p.y), &hit) == .success,
-           let hit, hit.pid != win.pid {
-            let other = NSRunningApplication(processIdentifier: hit.pid)?.localizedName ?? "another app"
-            throw CubError("\(other) is on top of that spot, so a click would land there. Not clicking.")
+           let hit, !lands(on: el, hit: hit) {
+            if hit.pid != win.pid {
+                let other = NSRunningApplication(processIdentifier: hit.pid)?.localizedName ?? "another app"
+                throw CubError("\(other) is on top of that spot, so a click would land there. Not clicking.")
+            }
+            let what = [hit.string(kAXRoleDescriptionAttribute), hit.string(kAXTitleAttribute) ?? hit.string(kAXDescriptionAttribute)]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+            throw CubError("Something else is at that spot (\(what.isEmpty ? "another element" : what)), so a click would land there. Not clicking.")
         }
         let saved = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)

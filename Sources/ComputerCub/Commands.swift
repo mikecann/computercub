@@ -400,7 +400,8 @@ final class Commands {
         guard let direction else {
             guard isRef else { throw CubError("Say up or down, e.g. `computercub scroll \(target) down`.") }
             return try acting(win) {
-                el.perform("AXScrollToVisible")
+                Input.reveal(el, in: win)
+                guard Input.shown(el, in: win) else { throw CubError("\(target) wouldn't scroll into view.") }
                 return "Scrolled \(target) into view."
             }
         }
@@ -446,18 +447,22 @@ final class Commands {
     // the window comes forward, and the pointer goes back where it was afterwards.
     private func drag(_ from: String, _ to: String) throws -> String {
         let (src, win) = try desk.lookup(from)
-        guard let a = grabPoint(src) else { throw CubError("Can't tell where \(from) is on screen.") }
-        let b: CGPoint
-        if to.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
-            guard let p = grabPoint(try desk.lookup(to).el) else { throw CubError("Can't tell where \(to) is on screen.") }
-            b = p
-        } else {
-            guard let f = try desk.window(to).el.frame else { throw CubError("Can't tell where \(to) is on screen.") }
-            b = CGPoint(x: f.midX, y: f.midY)
-        }
+        let dest = to.range(of: #"^e\d+$"#, options: .regularExpression) != nil ? try desk.lookup(to) : nil
+        let destWin = dest == nil ? try desk.window(to) : nil
         return try acting(win) {
             Input.bringForward(win)
             usleep(300_000)
+            // Points come after raising and scrolling, which both move things.
+            Input.reveal(src, in: win)
+            guard Input.shown(src, in: win), let a = grabPoint(src) else { throw CubError("\(from) is out of view. Not dragging.") }
+            let b: CGPoint
+            if let dest {
+                guard let p = grabPoint(dest.el) else { throw CubError("Can't tell where \(to) is on screen.") }
+                b = p
+            } else {
+                guard let f = destWin?.el.frame else { throw CubError("Can't tell where \(to) is on screen.") }
+                b = CGPoint(x: f.midX, y: f.midY)
+            }
             for (p, name) in [(a, from), (b, to)] {
                 if let owner = Input.owner(at: p), owner != win.pid, name == from || desk.windowOwner(to) != owner {
                     let app = NSRunningApplication(processIdentifier: owner)?.localizedName ?? "another app"
