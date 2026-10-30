@@ -409,6 +409,9 @@ final class Commands {
             let submenu = item.elements(kAXChildrenAttribute).first
             if i == parts.count - 1 && submenu == nil {
                 if (item.attr(kAXEnabledAttribute) as? Bool) == false { throw CubError("\(trail.joined(separator: " > ")) is greyed out.") }
+                // Listing is fine, but a pick here would run with no window to show what it
+                // did, on a Mac nobody's watching.
+                if screenLocked { throw CubError(ScreenLock.refusal(user: userName)) }
                 // Menu items press fine without opening the menu.
                 if let win = try? desk.window(app.localizedName ?? appQuery) {
                     return try acting(win) {

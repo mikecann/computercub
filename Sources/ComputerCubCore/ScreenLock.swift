@@ -12,7 +12,7 @@ public enum ScreenLock {
 
     public static func refusal(user: String) -> String {
         """
-        The screen is locked, so macOS hides every app's windows from Accessibility. The apps are fine and it isn't a Space problem; the windows come back when \(user) unlocks. Until then `computercub apps` and `computercub menu <app>` still answer, and scriptable apps still answer AppleScript from your own shell, e.g. osascript -e 'tell application "Google Chrome" to get id of windows'.
+        The screen is locked, so macOS hides every app's windows from Accessibility. The apps are fine and it isn't a Space problem; the windows come back when \(user) unlocks. Until then `computercub apps` and listing with `computercub menu <app>` still answer (picking a menu item doesn't), and scriptable apps still answer AppleScript from your own shell, e.g. osascript -e 'tell application "Google Chrome" to get id of windows'.
         """
     }
 }
