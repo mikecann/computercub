@@ -26,5 +26,8 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    shows him a panel and waits for Done, then gives you the diff.
 6. `computercub shot <window|ref>` only when you need to see it. It's window-only; run
    `computercub clean` when you're done with personal screenshots.
+7. While the screen is locked macOS hides all windows from Accessibility, so window commands
+   fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
+   check use AppleScript from your own shell if the app is scriptable.
 
 Ask Mike before posting, sending, buying, deleting or changing settings or accounts.

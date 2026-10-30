@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ComputerCubCore
 
 struct Reply {
     var ok: Bool
@@ -124,6 +125,9 @@ final class Commands {
         guard AXIsProcessTrusted() else {
             throw CubError("ComputerCub doesn't have Accessibility yet. System Settings › Privacy & Security › Accessibility, turn on ComputerCub, then try again.")
         }
+        // Without this they'd all report the windows as closed, and keys meant for a window
+        // could end up on the lock screen. apps and menu don't need windows.
+        if !["apps", "menu"].contains(cmd), screenLocked { throw CubError(ScreenLock.refusal(user: userName)) }
         switch cmd {
         case "apps": return apps()
         case "windows": return try windows(a.pos.first)
@@ -145,10 +149,15 @@ final class Commands {
 
     // MARK: Looking
 
+    private var screenLocked: Bool {
+        ScreenLock.isLocked(session: CGSessionCopyCurrentDictionary() as? [String: Any])
+    }
+
     private func doctor() -> String {
         var out = [
             "Accessibility: " + (AXIsProcessTrusted() ? "on" : "off. System Settings › Privacy & Security › Accessibility, turn on ComputerCub"),
             "Screen Recording: " + (CGPreflightScreenCaptureAccess() ? "on" : "off, only needed for `computercub shot`. System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub"),
+            "Screen: " + (screenLocked ? "locked, so no windows can be seen or used until \(userName) unlocks" : "unlocked"),
             "Running from: \(Bundle.main.bundlePath) (pid \(getpid()))",
             "Displays:",
         ]
@@ -161,13 +170,17 @@ final class Commands {
 
     private func apps() -> String {
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        return desk.apps().map { app in
+        let locked = screenLocked
+        let list = desk.apps().map { app in
             var s = app.localizedName ?? "pid \(app.processIdentifier)"
             if app.processIdentifier == front { s += " [frontmost]" }
             if app.isHidden { s += " [hidden]" }
+            // Every app would say 0 windows while locked, which isn't true.
+            if locked { return s }
             let n = desk.windows(of: app).count
             return s + (n == 1 ? ", 1 window" : ", \(n) windows")
         }.joined(separator: "\n")
+        return locked ? "The screen is locked, so window counts aren't available.\n\(list)" : list
     }
 
     private func windows(_ query: String?) throws -> String {
@@ -586,6 +599,7 @@ final class Commands {
         let target = try a.at(0, "a window")
         let message = try a.at(1, "what \(userName) needs to do")
         guard !Thread.isMainThread else { throw CubError("handoff needs the ComputerCub app; run the installed `computercub`.") }
+        if screenLocked { throw CubError(ScreenLock.refusal(user: userName)) }
         let (win, label) = try work.sync { () throws -> (Win, String) in
             let w = try desk.window(target)
             Input.bringForward(w)

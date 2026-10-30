@@ -97,6 +97,7 @@ For Chrome and other Chromium browsers it asks for their web accessibility tree,
 ## Not yet
 
 - Windows on other Spaces don't show up, because macOS only lists the current Space's.
+- Nothing can see or use windows while the screen is locked, because macOS hides them from Accessibility. Commands say so and fail; `computercub apps` and `computercub menu` still answer.
 - Chrome stops updating a page's tree while its window is completely covered.
 - No mouse-wheel scrolling or right-click menus yet. Dragging uses the real mouse, so it brings the window forward for a moment.
 - Nothing asks before an agent posts, sends or deletes something. Tell your agent to ask you first.
