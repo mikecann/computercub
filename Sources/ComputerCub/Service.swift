@@ -6,16 +6,18 @@ import ApplicationServices
 // so the grants would go to the wrong app. Instead the CLI hands each command to
 // ComputerCub.app over a Unix socket, the way BrowserBear hands them to its service, and ComputerCub.app
 // holds the grants under Mike's code signature.
+// NSApplication holds its delegate weakly, so it lives here.
+private let appDelegate = AppDelegate()
+
 enum Service {
     static func run() -> Never {
         signal(SIGPIPE, SIG_IGN)
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        // Asking at launch puts both prompts up at once, naming ComputerCub.
-        let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        if !AXIsProcessTrustedWithOptions(prompt) || !CGPreflightScreenCaptureAccess() {
-            if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
-        }
+        app.delegate = appDelegate
+        // Rather than firing macOS's prompts at launch, the setup window shows what's
+        // missing and asks for each one from its own button.
+        DispatchQueue.main.async { SetupWindowController.shared.showIfNeeded() }
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 2.0)
         Shot.sweep()
         do {

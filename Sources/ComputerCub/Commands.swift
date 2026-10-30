@@ -66,6 +66,7 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               for sign-ins, passkeys and anything else that only
                                               the person at the Mac should do
   computercub doctor                          permissions and displays
+  computercub setup                           the window that walks through the permissions
   computercub clean                           delete screenshots and saved reads now
   computercub quit                            stop the background app
 
@@ -87,6 +88,10 @@ final class Commands {
             case "help", "-h", "--help": return Reply(ok: true, out: helpText)
             // Waits for Mike outside the work queue, so other commands still run meanwhile.
             case "handoff": return Reply(ok: true, out: try handoff(a))
+            case "setup":
+                guard !Thread.isMainThread else { throw CubError("setup needs the ComputerCub app; run the installed `computercub`.") }
+                DispatchQueue.main.async { SetupWindowController.shared.show() }
+                return Reply(ok: true, out: "Opened ComputerCub's setup window.")
             case "quit":
                 // Hand Chrome back its normal accessibility mode before going.
                 work.sync { desk.relaxWeb(idleFor: 0) }

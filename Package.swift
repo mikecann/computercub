@@ -9,7 +9,10 @@ let package = Package(
         .executable(name: "computercub", targets: ["ComputerCub"])
     ],
     targets: [
-        .executableTarget(name: "ComputerCub")
+        // The setup window's state, kept apart from AppKit so it can be tested.
+        .target(name: "ComputerCubCore"),
+        .executableTarget(name: "ComputerCub", dependencies: ["ComputerCubCore"]),
+        .testTarget(name: "ComputerCubCoreTests", dependencies: ["ComputerCubCore"]),
     ],
     // Swift 5 mode: the AX and CoreGraphics APIs are all C, and strict concurrency adds noise without catching anything here.
     swiftLanguageModes: [.v5]
