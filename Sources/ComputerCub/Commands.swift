@@ -52,7 +52,9 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub read <window|ref>               the words in a window or element
   computercub click <ref> [--mouse] [--double]
   computercub type <ref> <text> [--submit] [--keys]
-                                              replaces the field's text; passwords are refused
+                                              replaces the field's text; passwords are refused.
+                                              Alone it just sets the value; --submit and --keys
+                                              use real keys, for when the app has to notice
   computercub press <window|ref> <keys>... [--front]
                                               e.g. cmd+shift+g, return, escape, tab, down. Keys
                                               go to the app in the background (cmd shortcuts
@@ -327,10 +329,10 @@ final class Commands {
                 return "Pressed \(ref)."
             }
             if ["AXRow", "AXCell", "AXOutlineRow"].contains(role), el.set(kAXSelectedAttribute, kCFBooleanTrue) == .success {
-                return "Selected \(ref)."
+                return "Selected \(ref). If it should have opened too (Finder's sidebar), use --mouse."
             }
             if ["AXTextField", "AXTextArea", "AXComboBox"].contains(role), el.set(kAXFocusedAttribute, kCFBooleanTrue) == .success {
-                return "Focused \(ref)."
+                return el.isFocused ? "Focused \(ref)." : "\(ref) didn't take focus from the background. Try --mouse."
             }
             for alt in ["AXPick", "AXConfirm", "AXOpen"] where actions.contains(alt) {
                 if el.perform(alt) == .success { return "Did \(alt) on \(ref)." }
@@ -346,22 +348,56 @@ final class Commands {
             throw CubError("\(ref) is a password field. Passwords stay with \(userName): use `computercub handoff \(desk.ref(for: win)) \"…\"`.")
         }
         return try acting(win) {
-            el.set(kAXFocusedAttribute, kCFBooleanTrue)
-            var how = ""
-            // Setting the value is instant and doesn't depend on focus; real keys are
-            // for fields that only listen to key events.
-            if keys || el.set(kAXValueAttribute, text as CFString) != .success {
-                try Input.toWindow(win, front: false) { to in
-                    try Input.key("cmd+a", pid: to)
-                    try Input.type(text, pid: to)
-                    if submit { try Input.key("return", pid: to) }
+            // Setting the value is instant and doesn't depend on focus, but the app isn't told:
+            // the snap shows the new text while Finder's rename fields carry on as before. So
+            // anything that has to take effect goes in as real keys, as Mike would type it.
+            if !keys && !submit {
+                if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
+                if el.set(kAXValueAttribute, text as CFString) == .success {
+                    return "Set \(ref)'s text directly, so the app may not have noticed yet. --submit or --keys types it for real."
                 }
-                how = " with keys"
-            } else if submit {
-                try Input.toWindow(win, front: false) { try Input.key("return", pid: $0) }
             }
-            return "Typed into \(ref)\(how)\(submit ? " and pressed Return" : "")."
+            let forward = try typeKeys(text, into: el, ref: ref, win: win, submit: submit)
+            return "Typed into \(ref) with keys\(forward ? " with the window brought forward" : "")\(submit ? " and pressed Return" : "")."
         }
+    }
+
+    // Tries from the background first. Some fields are drawn by a helper process that keys
+    // sent to the app never reach (Finder's page for a plugged-in iPhone belongs to
+    // com.apple.amp.devicesui, though Accessibility says it's Finder's), and some only start
+    // editing on a real click. So check the text landed, and if it didn't, do what Mike
+    // would: bring the window up, click the field, and use the keyboard. Returns whether
+    // the window had to come forward.
+    private func typeKeys(_ text: String, into el: AXUIElement, ref: String, win: Win, submit: Bool) throws -> Bool {
+        func send(_ to: pid_t?) throws -> Bool {
+            if !el.selectAllText() { try Input.key("cmd+a", pid: to) }
+            try Input.type(text, pid: to)
+            return el.waitForText(text)
+        }
+        if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
+        var landed = false
+        // If the field already shows this text, there's no telling whether keys landed.
+        if el.isFocused, el.string(kAXValueAttribute) != text {
+            try Input.toWindow(win, front: false) { to in
+                landed = try send(to)
+                if landed && submit { try Input.key("return", pid: to) }
+            }
+            if landed { return false }
+        }
+        try Input.toWindow(win, front: true) { to in
+            if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
+            // The first click on a page that's just loaded can go unnoticed, hence two tries.
+            for _ in 0..<2 where !el.isFocused {
+                try Input.click(el, in: win, double: false)
+                usleep(250_000)
+            }
+            guard try send(to) else {
+                let now = el.string(kAXValueAttribute).map { "\"\(clip($0))\"" } ?? "something else"
+                throw CubError("Typed into \(ref), but it shows \(now)\(submit ? ", so Return wasn't pressed" : "").")
+            }
+            if submit { try Input.key("return", pid: to) }
+        }
+        return true
     }
 
     private func press(_ target: String, _ combos: [String], front: Bool) throws -> String {
@@ -369,7 +405,8 @@ final class Commands {
         let win: Win
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
             let (el, w) = try desk.lookup(target)
-            el.set(kAXFocusedAttribute, kCFBooleanTrue)
+            // Asking again from the background can knock a field out of editing.
+            if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
             win = w
         } else {
             win = try desk.window(target)

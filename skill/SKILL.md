@@ -22,11 +22,16 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    background app, retry with `--front`. If a click needs a real mouse, `--mouse`. Both
    briefly bring the window forward. `--mouse` scrolls the control into view first and
    won't click if something else would catch it.
-5. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
+5. `computercub type` without flags only sets the field's value, which apps may not notice: a
+   rename in Finder shows the new text and stays the old name. Use `--submit` to have it
+   typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
+   field from the background, it brings the window up and clicks the field first. Selecting
+   a row doesn't open it in Finder's sidebar: use `click --mouse`.
+6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
-6. `computercub shot <window|ref>` only when you need to see it. It's window-only; run
+7. `computercub shot <window|ref>` only when you need to see it. It's window-only; run
    `computercub clean` when you're done with personal screenshots.
-7. While the screen is locked macOS hides all windows from Accessibility, so window commands
+8. While the screen is locked macOS hides all windows from Accessibility, so window commands
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
 

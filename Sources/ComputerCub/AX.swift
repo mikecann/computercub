@@ -90,6 +90,30 @@ extension AXUIElement {
     }
 
     var isAlive: Bool { attr(kAXRoleAttribute) != nil }
+
+    var isFocused: Bool { attr(kAXFocusedAttribute) as? Bool == true }
+
+    // Unlike cmd+a, which is a menu shortcut and only fires in the active app.
+    func selectAllText() -> Bool {
+        var all = CFRange(location: 0, length: (string(kAXValueAttribute) ?? "").utf16.count)
+        guard let range = AXValueCreate(.cfRange, &all), set(kAXSelectedTextRangeAttribute, range) == .success else { return false }
+        var now = CFRange()
+        guard let v = attr(kAXSelectedTextRangeAttribute), CFGetTypeID(v) == AXValueGetTypeID(),
+              AXValueGetValue(v as! AXValue, .cfRange, &now) else { return false }
+        return now.length == all.length
+    }
+
+    // Whether a field shows this text within half a second. Fields that won't say what's in
+    // them (some web ones), and text with line breaks in it, get the benefit of the doubt.
+    func waitForText(_ text: String) -> Bool {
+        if text.contains(where: \.isNewline) { return true }
+        for _ in 0..<10 {
+            guard let now = string(kAXValueAttribute) else { return true }
+            if now == text { return true }
+            usleep(50_000)
+        }
+        return false
+    }
 }
 
 func clip(_ s: String, _ max: Int = 80) -> String {

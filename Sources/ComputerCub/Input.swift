@@ -93,6 +93,8 @@ enum Input {
     // separate process (openAndSavePanelService, for every sandboxed app, System Settings
     // included), and keys posted to the app never reach it: cmd+shift+g did nothing. So
     // keys for a sheet go in with the window in front, posted as a real keyboard's (nil).
+    // So do all keys once the window's in front: Finder's page for a plugged-in iPhone is
+    // drawn by a helper process too, with nothing in Accessibility to give that away.
     @discardableResult
     static func toWindow(_ win: Win, front: Bool, _ body: (pid_t?) throws -> Void) throws -> Bool {
         if (win.el.attr(kAXMinimizedAttribute) as? Bool) == true {
@@ -122,15 +124,15 @@ enum Input {
                     ?? "a panel or popup that isn't in its window list (Escape usually closes it)"
                 throw CubError("\(win.appName)'s keys are going to \(other), not that window. Not sending them.")
             }
-            guard !onSheet(win) else {
-                // Posted system-wide, keys go to whatever's in front, so make sure it's us.
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == win.pid else {
+            // Posted system-wide, keys go to whatever's in front, so make sure it's us.
+            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == win.pid else {
+                guard !onSheet(win) else {
                     throw CubError("\(win.appName) wouldn't come to the front, and keys for its sheet only get there from the front. Not sending them.")
                 }
-                try body(nil)
+                try body(win.pid)
                 return
             }
-            try body(win.pid)
+            try body(nil)
         }
         return !front
     }
