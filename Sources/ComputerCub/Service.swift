@@ -115,7 +115,8 @@ enum Client {
         Wire.send(fd, ["args": args, "cwd": FileManager.default.currentDirectoryPath])
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
-            FileHandle.standardError.write("computercub: no answer from ComputerCub.app\n".data(using: .utf8)!)
+            // Almost always the app being stopped mid-command, by a reinstall or `computercub quit`.
+            FileHandle.standardError.write("computercub: no answer from ComputerCub.app; it stopped before replying (a reinstall or `computercub quit` does that). The command may or may not have happened: snap to see, then retry.\n".data(using: .utf8)!)
             return nil
         }
         return Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? "", restart: reply["restart"] as? Bool ?? false)

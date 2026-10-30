@@ -10,7 +10,7 @@ struct Reply {
 struct Args {
     var pos: [String] = []
     var flags: [String: String] = [:]
-    static let valued: Set<String> = ["wait", "max"]
+    static let valued: Set<String> = ["wait", "max", "find"]
 
     init(_ argv: [String]) {
         var i = 0
@@ -46,6 +46,8 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub windows [app]                   windows, with refs (w3), size and display
   computercub snap <window> [--full] [--all]  what you can click or type in, with refs
                                               (e12); after the first look, only what changed
+  computercub snap <window> --find <text>     just the controls whose line has that text,
+                                              searching the whole window
   computercub read <window|ref>               the words in a window or element
   computercub click <ref> [--mouse] [--double]
   computercub type <ref> <text> [--submit] [--keys]
@@ -125,7 +127,9 @@ final class Commands {
         switch cmd {
         case "apps": return apps()
         case "windows": return try windows(a.pos.first)
-        case "snap": return try snap(try a.at(0, "a window"), full: a.has("full"), all: a.has("all"))
+        case "snap":
+            if let text = a.flags["find"] { return try find(try a.at(0, "a window"), text) }
+            return try snap(try a.at(0, "a window"), full: a.has("full"), all: a.has("all"))
         case "read": return try read(try a.at(0, "a window or ref"))
         case "click": return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"))
         case "type": return try type(try a.at(0, "a ref"), try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"))
@@ -189,6 +193,31 @@ final class Commands {
         return desk.header(win) + (d.full ? "" : " (changes since the last look)") + "\n" + d.text
     }
 
+    // Long settings panes put the control you want hundreds of lines down. This walks
+    // everything (as --all) but prints only the matches, and leaves the last look alone
+    // so the next snap still diffs against what the agent last saw in full.
+    private func find(_ target: String, _ text: String) throws -> String {
+        guard !text.isEmpty else { throw CubError("Find what? e.g. `computercub snap \(target) --find Privacy`.") }
+        let win = try desk.window(target)
+        let lines = Snapshot.lines(win, desk, all: true)
+        // Landmarks ([sheet], [toolbar]) say where a match is; keep the one above each.
+        var out: [String] = [], landmark: String?
+        for l in lines {
+            let hit = l.localizedCaseInsensitiveContains(text)
+            if l.hasPrefix("[") {
+                landmark = hit ? nil : l
+                if hit { out.append(l) }
+                continue
+            }
+            guard hit else { continue }
+            if let m = landmark { out.append(m); landmark = nil }
+            out.append(l)
+        }
+        let header = desk.header(win)
+        if out.isEmpty { return "\(header)\nNothing matching \"\(text)\" in its \(lines.count) lines. `computercub read \(desk.ref(for: win))` has the words that aren't controls." }
+        return "\(header) (matching \"\(text)\")\n" + out.joined(separator: "\n")
+    }
+
     private func read(_ target: String) throws -> String {
         let root: AXUIElement, win: Win
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
@@ -239,14 +268,17 @@ final class Commands {
 
     // Runs an action, waits for the window to settle, and answers with what changed,
     // plus any new windows the app opened (a Save sheet, a Go to Folder box).
-    private func acting(_ win: Win, _ body: () throws -> String) throws -> String {
+    // settle: look again until two looks agree, for things that animate. Each look of a
+    // long pane can take seconds on a busy Mac, so scrolls (which rarely change the
+    // list) take just one.
+    private func acting(_ win: Win, settle: Bool = true, _ body: () throws -> String) throws -> String {
         let before = Set(desk.windows(of: win.app).map(\.id))
         if desk.lastLines[win.id] == nil { desk.lastLines[win.id] = Snapshot.lines(win, desk) }
         var out = [try body()]
         usleep(250_000)
         if win.el.isAlive {
             var lines = Snapshot.lines(win, desk)
-            for _ in 0..<3 {
+            for _ in 0..<(settle ? 3 : 0) {
                 usleep(250_000)
                 guard win.el.isAlive else { break }
                 let again = Snapshot.lines(win, desk)
@@ -306,14 +338,14 @@ final class Commands {
             // Setting the value is instant and doesn't depend on focus; real keys are
             // for fields that only listen to key events.
             if keys || el.set(kAXValueAttribute, text as CFString) != .success {
-                try Input.toWindow(win, front: false) {
-                    try Input.key("cmd+a", pid: win.pid)
-                    try Input.type(text, pid: win.pid)
-                    if submit { try Input.key("return", pid: win.pid) }
+                try Input.toWindow(win, front: false) { to in
+                    try Input.key("cmd+a", pid: to)
+                    try Input.type(text, pid: to)
+                    if submit { try Input.key("return", pid: to) }
                 }
                 how = " with keys"
             } else if submit {
-                try Input.toWindow(win, front: false) { try Input.key("return", pid: win.pid) }
+                try Input.toWindow(win, front: false) { try Input.key("return", pid: $0) }
             }
             return "Typed into \(ref)\(how)\(submit ? " and pressed Return" : "")."
         }
@@ -335,10 +367,12 @@ final class Commands {
         // Chrome cmd+w. So they come forward without needing --front.
         let shortcut = !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier
             && combos.contains { $0.lowercased().split(separator: "+").dropLast().contains { $0 == "cmd" || $0 == "command" } }
+        let sheet = Input.onSheet(win)
         return try acting(win) {
-            let moved = try Input.toWindow(win, front: front || shortcut) { for c in combos { try Input.key(c, pid: win.pid) } }
+            let moved = try Input.toWindow(win, front: front || shortcut) { to in for c in combos { try Input.key(c, pid: to) } }
             let how = front ? " with the window in front"
                 : shortcut ? " with the window brought forward (cmd shortcuts only work in the active app)"
+                : sheet ? " with the window brought forward (keys only reach its sheet from the front)"
                 : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
             return "Pressed \(combos.joined(separator: " "))\(how)."
         }
@@ -409,7 +443,7 @@ final class Commands {
         }
         guard let direction else {
             guard isRef else { throw CubError("Say up or down, e.g. `computercub scroll \(target) down`.") }
-            return try acting(win) {
+            return try acting(win, settle: false) {
                 Input.reveal(el, in: win)
                 guard Input.shown(el, in: win) else { throw CubError("\(target) wouldn't scroll into view.") }
                 return "Scrolled \(target) into view."
@@ -417,14 +451,30 @@ final class Commands {
         }
         guard direction == "up" || direction == "down" else { throw CubError("Scroll up or down.") }
         guard let area = scrollArea(around: el) else { throw CubError("Nothing scrolls there.") }
-        return try acting(win) {
-            let action = direction == "up" ? "AXScrollUpByPage" : "AXScrollDownByPage"
-            if area.actions.contains(action), area.perform(action) == .success { return "Scrolled \(direction) a page." }
-            if let bar = area.element(kAXVerticalScrollBarAttribute), let now = bar.attr(kAXValueAttribute) as? NSNumber {
-                let next = min(1, max(0, now.doubleValue + (direction == "up" ? -0.25 : 0.25)))
-                if bar.set(kAXValueAttribute, NSNumber(value: next)) == .success { return "Scrolled \(direction)." }
+        let bar = area.element(kAXVerticalScrollBarAttribute)
+        // Where it got to, so an agent can tell when to stop.
+        func whereNow() -> String {
+            guard let v = (bar?.attr(kAXValueAttribute) as? NSNumber)?.doubleValue else { return "" }
+            return v >= 0.995 ? " (at the bottom)" : v <= 0.005 ? " (at the top)" : " (\(Int(v * 100))% of the way down)"
+        }
+        return try acting(win, settle: false) {
+            // The bar first: System Settings' SwiftUI panes say yes to AXScrollDownByPage and
+            // jump to the top instead, so paging through one never got past the first screen.
+            if let bar, let now = (bar.attr(kAXValueAttribute) as? NSNumber)?.doubleValue {
+                // Nine tenths of what's showing, so a line at the edge stays in view.
+                let page = Input.scrollRange(area, vertical: true).map { $0.visible * 0.9 / $0.range } ?? 0.25
+                let next = min(1, max(0, now + (direction == "up" ? -page : page)))
+                if bar.set(kAXValueAttribute, NSNumber(value: next)) == .success {
+                    usleep(150_000)
+                    return "Scrolled \(direction) a page\(whereNow())."
+                }
             }
-            try Input.toWindow(win, front: false) { try Input.key(direction == "up" ? "pageup" : "pagedown", pid: win.pid) }
+            let action = direction == "up" ? "AXScrollUpByPage" : "AXScrollDownByPage"
+            if area.actions.contains(action), area.perform(action) == .success {
+                usleep(150_000)
+                return "Scrolled \(direction) a page\(whereNow())."
+            }
+            try Input.toWindow(win, front: false) { try Input.key(direction == "up" ? "pageup" : "pagedown", pid: $0) }
             return "Pressed \(direction == "up" ? "Page Up" : "Page Down")."
         }
     }
@@ -443,11 +493,13 @@ final class Commands {
         while !queue.isEmpty, seen < 3000 {
             let n = queue.removeFirst()
             seen += 1
-            if n.string(kAXRoleAttribute) == "AXScrollArea", let f = n.frame, f.width * f.height > (best?.1 ?? 0) {
-                best = (n, f.width * f.height)
+            // Role and children in one round trip; this walk covers the whole window.
+            let v = n.values([kAXRoleAttribute, kAXChildrenAttribute])
+            if v[kAXRoleAttribute] as? String == "AXScrollArea" {
+                if let f = n.frame, f.width * f.height > (best?.1 ?? 0) { best = (n, f.width * f.height) }
                 continue
             }
-            queue += n.elements(kAXChildrenAttribute)
+            queue += v[kAXChildrenAttribute] as? [AXUIElement] ?? []
         }
         return best?.0
     }

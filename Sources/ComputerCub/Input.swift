@@ -39,7 +39,12 @@ enum Input {
         return (code, flags)
     }
 
-    static func key(_ combo: String, pid: pid_t) throws {
+    // A nil pid posts to the whole system, as a real keyboard would: see toWindow.
+    private static func post(_ e: CGEvent, _ pid: pid_t?) {
+        if let pid { e.postToPid(pid) } else { e.post(tap: .cghidEventTap) }
+    }
+
+    static func key(_ combo: String, pid: pid_t?) throws {
         let (code, flags) = try parse(combo)
         let src = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true),
@@ -48,13 +53,13 @@ enum Input {
         }
         down.flags = flags
         up.flags = flags
-        down.postToPid(pid)
+        post(down, pid)
         usleep(12_000)
-        up.postToPid(pid)
+        post(up, pid)
         usleep(30_000)
     }
 
-    static func type(_ text: String, pid: pid_t) throws {
+    static func type(_ text: String, pid: pid_t?) throws {
         let src = CGEventSource(stateID: .hidSystemState)
         for ch in text {
             if ch == "\n" { try key("return", pid: pid); continue }
@@ -63,7 +68,7 @@ enum Input {
             for down in [true, false] {
                 guard let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down) else { continue }
                 e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
-                e.postToPid(pid)
+                post(e, pid)
             }
             usleep(6_000)
         }
@@ -83,15 +88,24 @@ enum Input {
     // sits on another Space: then cmd+w closed Mike's Downloads window instead. So check
     // where keys will land, bring the window forward if that's what it takes, and send
     // nothing if they still wouldn't reach it. Returns whether it had to come forward.
+    //
+    // body gets the pid to post keys to. A sheet is often an Open or Save panel run by a
+    // separate process (openAndSavePanelService, for every sandboxed app, System Settings
+    // included), and keys posted to the app never reach it: cmd+shift+g did nothing. So
+    // keys for a sheet go in with the window in front, posted as a real keyboard's (nil).
     @discardableResult
-    static func toWindow(_ win: Win, front: Bool, _ body: () throws -> Void) throws -> Bool {
+    static func toWindow(_ win: Win, front: Bool, _ body: (pid_t?) throws -> Void) throws -> Bool {
         if (win.el.attr(kAXMinimizedAttribute) as? Bool) == true {
             throw CubError("That window is minimised, so keys would go to another one. Not sending them.")
         }
-        focus(win)
-        usleep(50_000)
-        if !front && aimed(win) {
-            try body()
+        // Already aimed (perhaps at a sheet on it): leave focus be, or we'd pull it off the sheet.
+        if !aimed(win) {
+            focus(win)
+            usleep(50_000)
+        }
+        let sheet = onSheet(win)
+        if !front && !sheet && aimed(win) {
+            try body(win.pid)
             return false
         }
         try inFront(win) {
@@ -108,14 +122,35 @@ enum Input {
                     ?? "a panel or popup that isn't in its window list (Escape usually closes it)"
                 throw CubError("\(win.appName)'s keys are going to \(other), not that window. Not sending them.")
             }
-            try body()
+            guard !onSheet(win) else {
+                // Posted system-wide, keys go to whatever's in front, so make sure it's us.
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == win.pid else {
+                    throw CubError("\(win.appName) wouldn't come to the front, and keys for its sheet only get there from the front. Not sending them.")
+                }
+                try body(nil)
+                return
+            }
+            try body(win.pid)
         }
         return !front
     }
 
+    // True when keys will land in the window or a sheet on it. While a sheet's up (a
+    // Save or Open panel, or System Settings' file picker on its Search Privacy sheet)
+    // the app's focused window is the sheet, whose parent is the window, or another sheet.
     static func aimed(_ win: Win) -> Bool {
-        guard let key = AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute) else { return false }
-        return CFEqual(key, win.el)
+        var key = AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute)
+        for _ in 0..<4 {
+            guard let k = key else { return false }
+            if CFEqual(k, win.el) { return true }
+            guard k.string(kAXRoleAttribute) == kAXSheetRole else { return false }
+            key = k.element(kAXParentAttribute)
+        }
+        return false
+    }
+
+    static func onSheet(_ win: Win) -> Bool {
+        AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute)?.string(kAXRoleAttribute) == kAXSheetRole
     }
 
     // Some keys only work in the active app (Chrome's cmd+w needs a key window, which an
@@ -124,7 +159,13 @@ enum Input {
     static func inFront<T>(_ win: Win, _ body: () throws -> T) rethrows -> T {
         let previous = NSWorkspace.shared.frontmostApplication
         bringForward(win)
-        usleep(350_000)
+        // Usually a third of a second, but a busy Mac took over one for System Settings.
+        for i in 0..<15 {
+            usleep(100_000)
+            guard NSWorkspace.shared.frontmostApplication?.processIdentifier != win.pid else { break }
+            if i == 7 { win.app.activate() }
+        }
+        usleep(150_000)
         defer {
             usleep(250_000)
             if let previous, previous.processIdentifier != win.pid {
@@ -204,9 +245,14 @@ enum Input {
                 else if f.midX > a.maxX { action = "AXScrollRightByPage" }
                 else if f.midX < a.minX { action = "AXScrollLeftByPage" }
                 else { break }
+                // SwiftUI answers a page down by jumping to the top, so watch the bar too.
+                let bar = area.element(kAXVerticalScrollBarAttribute)
+                let was = (bar?.attr(kAXValueAttribute) as? NSNumber)?.doubleValue
                 guard area.perform(action) == .success else { break }
                 usleep(120_000)
                 if el.frame == f { break }  // Didn't move, so it won't.
+                if let was, let now = (bar?.attr(kAXValueAttribute) as? NSNumber)?.doubleValue,
+                   action == "AXScrollDownByPage" ? now < was : action == "AXScrollUpByPage" ? now > was : false { break }
             }
         }
     }
@@ -218,18 +264,26 @@ enum Input {
         guard let f = el.frame, let a = area.frame,
               vertical ? (f.midY < a.minY || f.midY > a.maxY) : (f.midX < a.minX || f.midX > a.maxX),
               let bar = area.element(vertical ? kAXVerticalScrollBarAttribute : kAXHorizontalScrollBarAttribute),
-              let now = (bar.attr(kAXValueAttribute) as? NSNumber)?.doubleValue else { return }
+              let now = (bar.attr(kAXValueAttribute) as? NSNumber)?.doubleValue,
+              let range = scrollRange(area, vertical: vertical)?.range else { return }
+        let off = vertical ? f.midY - a.midY : f.midX - a.midX
+        bar.set(kAXValueAttribute, NSNumber(value: min(1, max(0, now + Double(off) / range))))
+        usleep(150_000)
+    }
+
+    // How much shows and how far there is to scroll, in points. A scroll bar's value
+    // covers just the second.
+    static func scrollRange(_ area: AXUIElement, vertical: Bool) -> (visible: Double, range: Double)? {
+        guard let a = area.frame else { return nil }
         var content = CGSize.zero
         if let v = area.attr("AXContentSize"), CFGetTypeID(v) == AXValueGetTypeID() {
             AXValueGetValue(v as! AXValue, .cgSize, &content)
         } else {
             content = area.elements(kAXChildrenAttribute).compactMap(\.frame).reduce(CGRect.null) { $0.union($1) }.size
         }
-        let range = vertical ? content.height - a.height : content.width - a.width
-        guard range > 0 else { return }
-        let off = vertical ? f.midY - a.midY : f.midX - a.midX
-        bar.set(kAXValueAttribute, NSNumber(value: min(1, max(0, now + Double(off / range)))))
-        usleep(150_000)
+        let visible = Double(vertical ? a.height : a.width)
+        let range = Double(vertical ? content.height : content.width) - visible
+        return range > 0 ? (visible, range) : nil
     }
 
     // Lists animate when scrolled. Some (SwiftUI) report frames mid-glide; others

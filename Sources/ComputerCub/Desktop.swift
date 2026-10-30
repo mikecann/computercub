@@ -20,8 +20,41 @@ final class Desktop {
     private var elementRefs: [AXKey: String] = [:]
     private var elementsByRef: [String: (el: AXUIElement, window: CGWindowID, pid: pid_t)] = [:]
     private var nextWindow = 1, nextElement = 1
+    // Element refs can't survive a restart, but their numbers mustn't be reused either, or
+    // an agent's old e57 would click whatever got e57 next. Numbers are reserved in blocks
+    // so the file isn't written for every element.
+    private var reservedElements = 0, firstElement = 1
     private var webTurnedOn: Set<pid_t> = []
     var lastLines: [CGWindowID: [String]] = [:]
+
+    // The service gets restarted under agents' feet (a reinstall pkills it), and a fresh
+    // count would hand the same window a new ref: w5, then w3, then w1. CGWindowIDs outlive
+    // the service, so window refs are saved and picked up again.
+    private static let refsFile = Paths.support.appendingPathComponent("window-refs.json")
+
+    private init() {
+        guard let data = try? Data(contentsOf: Self.refsFile),
+              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let refs = saved["refs"] as? [String: [Int]] else { return }
+        nextWindow = saved["next"] as? Int ?? 1
+        nextElement = saved["reservedElements"] as? Int ?? 1
+        firstElement = nextElement
+        // Only windows that are still open; the rest would just pile up.
+        let open = Set((CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .compactMap { $0[kCGWindowNumber as String] as? Int })
+        for (r, v) in refs where v.count == 2 && open.contains(v[1]) {
+            let id = CGWindowID(v[1])
+            windowRefs[id] = r
+            windowsByRef[r] = (pid_t(v[0]), id)
+        }
+    }
+
+    private func saveRefs() {
+        let refs = windowsByRef.mapValues { [Int($0.pid), Int($0.id)] }
+        let json: [String: Any] = ["next": nextWindow, "reservedElements": reservedElements, "refs": refs]
+        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        try? data.write(to: Self.refsFile, options: .atomic)
+    }
 
     // Window refs follow the CGWindowID, which lasts as long as the window does.
     func ref(for win: Win) -> String {
@@ -30,6 +63,7 @@ final class Desktop {
         nextWindow += 1
         windowRefs[win.id] = r
         windowsByRef[r] = (win.pid, win.id)
+        saveRefs()
         return r
     }
 
@@ -51,13 +85,22 @@ final class Desktop {
         }
         let r = "e\(nextElement)"
         nextElement += 1
+        if nextElement > reservedElements {
+            reservedElements = nextElement + 500
+            saveRefs()
+        }
         elementRefs[key] = r
         elementsByRef[r] = (el, win.id, win.pid)
         return r
     }
 
     func lookup(_ ref: String) throws -> (el: AXUIElement, win: Win) {
-        guard let e = elementsByRef[ref] else { throw CubError("No element \(ref). Refs come from `computercub snap`.") }
+        guard let e = elementsByRef[ref] else {
+            if let n = Int(ref.dropFirst()), n < firstElement {
+                throw CubError("\(ref) is from before ComputerCub restarted, so it's gone. Take another look with `computercub snap`.")
+            }
+            throw CubError("No element \(ref). Refs come from `computercub snap`.")
+        }
         guard e.el.isAlive else { throw CubError("\(ref) has gone (the app removed it). Take another look with `computercub snap`.") }
         return (e.el, try window(pid: e.pid, id: e.window, ref: ref))
     }

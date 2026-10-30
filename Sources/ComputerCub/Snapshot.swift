@@ -51,6 +51,9 @@ enum Snapshot {
         let all: Bool
         var lines: [String] = []
         var signatures: [String: String] = [:]
+        private var seen: [String: Int] = [:]
+        // The last named control, which an unnamed one is known by.
+        private var lastName = "the top"
         var visited = 0
         var emptyWebArea = false
         var sawWebArea = false
@@ -64,9 +67,10 @@ enum Snapshot {
         }
 
         // inWeb: inside a web page, where rows and cells are layout, not things to pick.
-        // inRow: inside a native list row, whose text already went into the row's name.
+        // row: inside a native list row, whose text already went into the row's name (nil
+        // outside one).
         // inDialog: inside a sheet, dialog or alert, where the words matter ("Delete 3 items?").
-        func walk(_ el: AXUIElement, depth: Int, inWeb: Bool, inRow: Bool, inDialog: Bool) {
+        func walk(_ el: AXUIElement, depth: Int, inWeb: Bool, row: String?, inDialog: Bool) {
             if visited >= 8000 || depth > 120 || Date() > deadline {
                 truncated = true
                 return
@@ -79,7 +83,7 @@ enum Snapshot {
             var inWeb = inWeb, inDialog = inDialog
 
             if role == "AXStaticText" {
-                if inDialog, !inRow, let s = v[kAXValueAttribute] as? String, !s.trimmingCharacters(in: .whitespaces).isEmpty {
+                if inDialog, row == nil, let s = v[kAXValueAttribute] as? String, !s.trimmingCharacters(in: .whitespaces).isEmpty {
                     lines.append("\"\(clip(s, 160))\"")
                 }
                 return
@@ -105,32 +109,32 @@ enum Snapshot {
                 if inWeb && (role == "AXRow") { kind = "" }
                 // A row's text is already in its name, and Finder gives every folder row its own
                 // unnamed disclosure triangle (Right arrow opens it anyway).
-                if inRow && (kind == "textbox" || kind == "row" || kind == "disclosure") { kind = "" }
+                if row != nil && (kind == "textbox" || kind == "row" || kind == "disclosure") { kind = "" }
                 if !kind.isEmpty {
-                    let l = line(kind, el, v, kids)
+                    let (l, name) = line(kind, el, v, kids, row: row)
                     // Unnamed rows are spacers between sidebar sections.
-                    if kind == "row" && !l.contains("\"") { return }
+                    if kind == "row" && name.isEmpty { return }
                     lines.append(l)
                     // Only containers that can hold a menu or list need walking further.
                     if kind != "row" && kind != "popup" && kind != "menubutton" && kind != "combobox" && kind != "menu" { return }
                     if kind == "row" {
-                        walkKids(kids, depth: depth, inWeb: inWeb, inRow: true, inDialog: inDialog, role: role)
+                        walkKids(kids, depth: depth, inWeb: inWeb, row: name, inDialog: inDialog, role: role)
                         return
                     }
                 }
             }
-            walkKids(kids, depth: depth, inWeb: inWeb, inRow: inRow, inDialog: inDialog, role: role)
+            walkKids(kids, depth: depth, inWeb: inWeb, row: row, inDialog: inDialog, role: role)
         }
 
-        private func walkKids(_ kids: [AXUIElement], depth: Int, inWeb: Bool, inRow: Bool, inDialog: Bool, role: String) {
+        private func walkKids(_ kids: [AXUIElement], depth: Int, inWeb: Bool, row: String?, inDialog: Bool, role: String) {
             // Long native lists (a Finder folder, a log) would swamp everything else.
             let listy = !inWeb && !all && (role == "AXOutline" || role == "AXTable" || role == "AXList")
             for (i, k) in kids.enumerated() {
                 if listy && i >= Snapshot.maxRows {
-                    lines.append("… \(kids.count - i) more (snap --all shows them)")
+                    lines.append("… \(kids.count - i) more (snap --all shows them, --find <text> searches)")
                     return
                 }
-                walk(k, depth: depth + 1, inWeb: inWeb, inRow: inRow, inDialog: inDialog)
+                walk(k, depth: depth + 1, inWeb: inWeb, row: row, inDialog: inDialog)
             }
         }
 
@@ -153,11 +157,20 @@ enum Snapshot {
             }
         }
 
-        private func line(_ kind: String, _ el: AXUIElement, _ v: [String: AnyObject], _ kids: [AXUIElement]) -> String {
-            let name = name(el, v, kids, gather: kind == "row" || kind == "link" || kind == "button" || kind == "tab" || kind == "item")
-            let signature = "\(kind) \"\(name)\""
-            let ref = desk.ref(for: el, in: win, signature: name.isEmpty ? nil : signature)
-            if !name.isEmpty { signatures[signature] = ref }
+        // The line, and the name it gave the control.
+        private func line(_ kind: String, _ el: AXUIElement, _ v: [String: AnyObject], _ kids: [AXUIElement], row: String?) -> (String, String) {
+            var name = name(el, v, kids, gather: kind == "row" || kind == "link" || kind == "button" || kind == "tab" || kind == "item")
+            // System Settings' list toggles have no label of their own; the row's text is it.
+            if name.isEmpty, let row, !row.isEmpty { name = row }
+            // SwiftUI hands out new elements on every look, so refs are matched up by
+            // signature. Unnamed controls go by what's just above them, and a repeated
+            // signature (two "Google Drive" rows) gets numbered, so none of them churn.
+            var signature = name.isEmpty ? "\(kind) after \(lastName)" : "\(kind) \"\(name)\""
+            seen[signature, default: 0] += 1
+            if let n = seen[signature], n > 1 { signature += " #\(n)" }
+            let ref = desk.ref(for: el, in: win, signature: signature)
+            signatures[signature] = ref
+            if !name.isEmpty { lastName = signature }
             var s = "\(ref) \(kind)"
             if !name.isEmpty { s += " \"\(name)\"" }
             var flags: [String] = []
@@ -183,7 +196,7 @@ enum Snapshot {
             if (v[kAXExpandedAttribute] as? Bool) == true, !flags.contains("expanded") { flags.append("expanded") }
             if (v[kAXFocusedAttribute] as? Bool) == true { flags.append("focused") }
             if !flags.isEmpty { s += " [\(flags.joined(separator: ", "))]" }
-            return s
+            return (s, name)
         }
 
         private func name(_ el: AXUIElement, _ v: [String: AnyObject], _ kids: [AXUIElement], gather: Bool) -> String {
@@ -232,14 +245,14 @@ enum Snapshot {
     static func lines(_ win: Win, _ desk: Desktop, all: Bool = false) -> [String] {
         let justTurnedOn = desk.ensureWeb(win.app)
         var w = Walker(win, desk, all: all)
-        w.walk(win.el, depth: 0, inWeb: false, inRow: false, inDialog: false)
+        w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
         // Chrome builds the page's tree a moment after it's asked for; wait for it once.
         let pageMissing = w.emptyWebArea || (Desktop.isChromium(win.app) && !w.sawWebArea)
         if pageMissing && (justTurnedOn || desk.tryEnhancedWeb(win.app)) {
             for _ in 0..<6 where w.emptyWebArea || !w.sawWebArea {
                 usleep(500_000)
                 w = Walker(win, desk, all: all)
-                w.walk(win.el, depth: 0, inWeb: false, inRow: false, inDialog: false)
+                w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
             }
         }
         desk.signatures[win.id] = w.signatures
