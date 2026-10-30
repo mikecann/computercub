@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
-# Builds Mr Clicky.app, signs it, installs it to ~/Applications and links `mr-clicky` onto PATH.
+# Builds ComputerCub.app, signs it, installs it to ~/Applications and links `computercub` onto PATH.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="${MR_CLICKY_APP_PATH:-$HOME/Applications/Mr Clicky.app}"
-CLI="${MR_CLICKY_CLI_PATH:-$HOME/.local/bin/mr-clicky}"
-BUNDLE_ID='app.mikecann.mr-clicky'
+APP="${COMPUTERCUB_APP_PATH:-$HOME/Applications/ComputerCub.app}"
+CLI="${COMPUTERCUB_CLI_PATH:-$HOME/.local/bin/computercub}"
+BUNDLE_ID='app.mikecann.computercub'
 cd "$ROOT"
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/mr-clicky"
+BIN="$(swift build -c release --show-bin-path)/computercub"
 STAGE_ROOT="$(mktemp -d "$ROOT/.build/stage.XXXXXX")"
 trap 'rm -rf "$STAGE_ROOT"' EXIT
-STAGE="$STAGE_ROOT/Mr Clicky.app"
+STAGE="$STAGE_ROOT/ComputerCub.app"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
-cp "$BIN" "$STAGE/Contents/MacOS/mr-clicky"
-# icons/mr-clicky.png is the 1024 px app icon.
+cp "$BIN" "$STAGE/Contents/MacOS/computercub"
+# icons/computercub.png is the 1024 px app icon.
 mkdir -p "$STAGE_ROOT/icon.iconset"
 for SIZE in 16 32 128 256 512; do
-  sips -z "$SIZE" "$SIZE" "$ROOT/icons/mr-clicky.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}.png" >/dev/null
+  sips -z "$SIZE" "$SIZE" "$ROOT/icons/computercub.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}.png" >/dev/null
   DOUBLE=$((SIZE * 2))
-  sips -z "$DOUBLE" "$DOUBLE" "$ROOT/icons/mr-clicky.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
+  sips -z "$DOUBLE" "$DOUBLE" "$ROOT/icons/computercub.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
 done
-iconutil -c icns "$STAGE_ROOT/icon.iconset" -o "$STAGE/Contents/Resources/MrClicky.icns"
+iconutil -c icns "$STAGE_ROOT/icon.iconset" -o "$STAGE/Contents/Resources/ComputerCub.icns"
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-<key>CFBundleName</key><string>Mr Clicky</string>
-<key>CFBundleDisplayName</key><string>Mr Clicky</string>
-<key>CFBundleExecutable</key><string>mr-clicky</string>
-<key>CFBundleIconFile</key><string>MrClicky</string>
+<key>CFBundleName</key><string>ComputerCub</string>
+<key>CFBundleDisplayName</key><string>ComputerCub</string>
+<key>CFBundleExecutable</key><string>computercub</string>
+<key>CFBundleIconFile</key><string>ComputerCub</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
@@ -40,7 +40,7 @@ cat > "$STAGE/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-IDENTITY="${MR_CLICKY_CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -n 1)}"
+IDENTITY="${COMPUTERCUB_CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -n 1)}"
 if [[ -z "$IDENTITY" ]]; then
   echo "No Apple Development identity; signing ad hoc, so macOS will ask for permissions again after every build." >&2
   IDENTITY=-
@@ -56,21 +56,21 @@ if [[ -e "$APP" && "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$AP
   echo "Something else is at $APP. Move it first." >&2
   exit 1
 fi
-if [[ -e "$CLI" || -L "$CLI" ]] && [[ "$(readlink "$CLI" || true)" != "$APP/Contents/MacOS/mr-clicky" ]]; then
+if [[ -e "$CLI" || -L "$CLI" ]] && [[ "$(readlink "$CLI" || true)" != "$APP/Contents/MacOS/computercub" ]]; then
   echo "Something else is at $CLI. Move it first." >&2
   exit 1
 fi
 
 # Stop the running copy so the next command starts the new one.
-pkill -f "$APP/Contents/MacOS/mr-clicky serve" 2>/dev/null || true
-pkill -xf "$APP/Contents/MacOS/mr-clicky" 2>/dev/null || true
+pkill -f "$APP/Contents/MacOS/computercub serve" 2>/dev/null || true
+pkill -xf "$APP/Contents/MacOS/computercub" 2>/dev/null || true
 mkdir -p "$(dirname "$APP")" "$(dirname "$CLI")"
 rm -rf "$APP"
 mv "$STAGE" "$APP"
-ln -sfn "$APP/Contents/MacOS/mr-clicky" "$CLI"
-# The agent skill, so Claude and Codex know to reach for `mr-clicky`.
+ln -sfn "$APP/Contents/MacOS/computercub" "$CLI"
+# The agent skill, so Claude and Codex know to reach for `computercub`.
 for SKILLS in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
-  LINK="$SKILLS/mr-clicky"
+  LINK="$SKILLS/computercub"
   if [[ -e "$LINK" || -L "$LINK" ]] && [[ "$(readlink "$LINK" || true)" != "$ROOT/skill" ]]; then
     echo "Something else is at $LINK; leaving it." >&2
   elif [[ -d "$SKILLS" ]]; then
@@ -78,4 +78,4 @@ for SKILLS in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   fi
 done
 echo "Installed $APP, signed by $IDENTITY"
-echo "\`mr-clicky doctor\` starts it and says which permissions it still needs."
+echo "\`computercub doctor\` starts it and says which permissions it still needs."

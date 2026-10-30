@@ -7,7 +7,7 @@ import ApplicationServices
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
 
-struct ClickyError: Error, CustomStringConvertible {
+struct CubError: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
 }
@@ -91,7 +91,7 @@ func clip(_ s: String, _ max: Int = 80) -> String {
     return t.count > max ? String(t.prefix(max - 1)) + "…" : t
 }
 
-// Values whose names look like secrets are masked, as in Paws.
+// Values whose names look like secrets are masked, as in BrowserBear.
 let secretName = try! NSRegularExpression(pattern: "pass(word|code)?|secret|token|api.?key|cvc|cvv|card.?number|one.?time|otp", options: .caseInsensitive)
 
 func looksSecret(_ s: String) -> Bool {

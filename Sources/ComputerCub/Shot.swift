@@ -4,9 +4,9 @@ import UniformTypeIdentifiers
 
 enum Paths {
     static let home = FileManager.default.homeDirectoryForCurrentUser
-    static let support = home.appendingPathComponent("Library/Application Support/Mr Clicky")
-    static let socket = support.appendingPathComponent("mr-clicky.sock").path
-    static let cache = home.appendingPathComponent("Library/Caches/Mr Clicky")
+    static let support = home.appendingPathComponent("Library/Application Support/ComputerCub")
+    static let socket = support.appendingPathComponent("computercub.sock").path
+    static let cache = home.appendingPathComponent("Library/Caches/ComputerCub")
     static let shots = cache.appendingPathComponent("shots")
     static let reads = cache.appendingPathComponent("reads")
 }
@@ -17,9 +17,9 @@ enum Shot {
     static func capture(_ win: Win, crop: CGRect?, maxSide: Int) throws -> String {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
-            throw ClickyError("Mr Clicky needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on Mr Clicky. Everything else works without it.")
+            throw CubError("ComputerCub needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub. Everything else works without it.")
         }
-        guard win.id != 0 else { throw ClickyError("Can't find that window's id, so can't capture it.") }
+        guard win.id != 0 else { throw CubError("Can't find that window's id, so can't capture it.") }
 
         final class Box: @unchecked Sendable {
             var image: CGImage?
@@ -33,7 +33,7 @@ enum Shot {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 guard let w = content.windows.first(where: { $0.windowID == id }) else {
-                    throw ClickyError("ScreenCaptureKit can't see that window (minimised?).")
+                    throw CubError("ScreenCaptureKit can't see that window (minimised?).")
                 }
                 let filter = SCContentFilter(desktopIndependentWindow: w)
                 let cfg = SCStreamConfiguration()
@@ -54,9 +54,9 @@ enum Shot {
             }
             done.signal()
         }
-        if done.wait(timeout: .now() + 15) == .timedOut { throw ClickyError("The screenshot timed out.") }
+        if done.wait(timeout: .now() + 15) == .timedOut { throw CubError("The screenshot timed out.") }
         if let e = box.error { throw e }
-        guard var image = box.image else { throw ClickyError("The screenshot came back empty.") }
+        guard var image = box.image else { throw CubError("The screenshot came back empty.") }
 
         if let crop, let wf = win.el.frame, wf.width > 0 {
             let s = CGFloat(image.width) / wf.width
@@ -68,15 +68,15 @@ enum Shot {
         try FileManager.default.createDirectory(at: Paths.shots, withIntermediateDirectories: true)
         let url = Paths.shots.appendingPathComponent("\(safeName(win.appName))-\(stamp()).png")
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-            throw ClickyError("Couldn't write \(url.path).")
+            throw CubError("Couldn't write \(url.path).")
         }
         CGImageDestinationAddImage(dest, image, nil)
-        guard CGImageDestinationFinalize(dest) else { throw ClickyError("Couldn't write \(url.path).") }
+        guard CGImageDestinationFinalize(dest) else { throw CubError("Couldn't write \(url.path).") }
         return "\(url.path) (\(image.width)×\(image.height))"
     }
 
     // Screenshots and long reads can hold anything that was on screen, so they don't
-    // hang around: an hour, or `mr-clicky clean` for right now.
+    // hang around: an hour, or `computercub clean` for right now.
     static func sweep(olderThan age: TimeInterval = 3600) {
         let fm = FileManager.default
         for dir in [Paths.shots, Paths.reads] {

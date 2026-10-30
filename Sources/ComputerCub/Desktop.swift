@@ -57,17 +57,17 @@ final class Desktop {
     }
 
     func lookup(_ ref: String) throws -> (el: AXUIElement, win: Win) {
-        guard let e = elementsByRef[ref] else { throw ClickyError("No element \(ref). Refs come from `mr-clicky snap`.") }
-        guard e.el.isAlive else { throw ClickyError("\(ref) has gone (the app removed it). Take another look with `mr-clicky snap`.") }
+        guard let e = elementsByRef[ref] else { throw CubError("No element \(ref). Refs come from `computercub snap`.") }
+        guard e.el.isAlive else { throw CubError("\(ref) has gone (the app removed it). Take another look with `computercub snap`.") }
         return (e.el, try window(pid: e.pid, id: e.window, ref: ref))
     }
 
     private func window(pid: pid_t, id: CGWindowID, ref: String) throws -> Win {
         guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
-            throw ClickyError("The app that had \(ref) has quit.")
+            throw CubError("The app that had \(ref) has quit.")
         }
         guard let w = windows(of: app).first(where: { $0.id == id }) else {
-            throw ClickyError("The window that had \(ref) has closed.")
+            throw CubError("The window that had \(ref) has closed.")
         }
         return w
     }
@@ -100,16 +100,16 @@ final class Desktop {
             return shortest
         }
         if partial.isEmpty {
-            throw ClickyError("No app like \"\(query)\" is running. Running: \(all.compactMap(\.localizedName).joined(separator: ", "))")
+            throw CubError("No app like \"\(query)\" is running. Running: \(all.compactMap(\.localizedName).joined(separator: ", "))")
         }
-        throw ClickyError("\"\(query)\" could be \(partial.compactMap(\.localizedName).joined(separator: " or ")). Say which.")
+        throw CubError("\"\(query)\" could be \(partial.compactMap(\.localizedName).joined(separator: " or ")). Say which.")
     }
 
     // A window can be named as w3, an element ref (its window), an app ("Finder"), an app
     // and part of a title ("Chrome:Web Store"), or "front" for whatever Mike is looking at.
     func window(_ target: String) throws -> Win {
         if target.range(of: #"^w\d+$"#, options: .regularExpression) != nil {
-            guard let w = windowsByRef[target] else { throw ClickyError("No window \(target). `mr-clicky windows` lists them.") }
+            guard let w = windowsByRef[target] else { throw CubError("No window \(target). `computercub windows` lists them.") }
             return try window(pid: w.pid, id: w.id, ref: target)
         }
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil { return try lookup(target).win }
@@ -121,18 +121,18 @@ final class Desktop {
         }
         let app: NSRunningApplication
         if appQuery == "front" {
-            guard let f = NSWorkspace.shared.frontmostApplication else { throw ClickyError("Nothing is frontmost.") }
+            guard let f = NSWorkspace.shared.frontmostApplication else { throw CubError("Nothing is frontmost.") }
             app = f
         } else {
             app = try findApp(appQuery)
         }
         let wins = windows(of: app)
         let name = app.localizedName ?? appQuery
-        guard !wins.isEmpty else { throw ClickyError("\(name) has no windows open (on this Space).") }
+        guard !wins.isEmpty else { throw CubError("\(name) has no windows open (on this Space).") }
         if !titleQuery.isEmpty {
             let matches = wins.filter { $0.title.localizedCaseInsensitiveContains(titleQuery) }
             guard !matches.isEmpty else {
-                throw ClickyError("No \(name) window titled like \"\(titleQuery)\". Its windows: \(wins.map { "\"\(clip($0.title, 60))\"" }.joined(separator: ", "))")
+                throw CubError("No \(name) window titled like \"\(titleQuery)\". Its windows: \(wins.map { "\"\(clip($0.title, 60))\"" }.joined(separator: ", "))")
             }
             return preferFocused(matches, app)
         }

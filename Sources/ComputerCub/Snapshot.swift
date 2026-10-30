@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 
 // Turns a window's accessibility tree into a short list an agent can act on, the same
-// shape as Paws:
+// shape as BrowserBear:
 //
 //   [toolbar]
 //   e4 button "Back" [disabled]
@@ -10,7 +10,7 @@ import ApplicationServices
 //   e9 row "Downloads" [selected]
 //   [page "Developer Dashboard" https://chrome.google.com/webstore/devconsole]
 //   ## Items
-//   e31 link "Paws"
+//   e31 link "BrowserBear"
 //
 // Only things you can act on, plus headings and the containers that change what's
 // clickable (sheets, dialogs, menus, the web page) make the cut.
@@ -244,11 +244,11 @@ enum Snapshot {
         }
         desk.signatures[win.id] = w.signatures
         var out = w.lines
-        if w.truncated { out.append("… stopped after \(w.visited) elements; `mr-clicky read` or a narrower window helps") }
+        if w.truncated { out.append("… stopped after \(w.visited) elements; `computercub read` or a narrower window helps") }
         return out
     }
 
-    // The cheaper of a diff against the last look and the full list, as in Paws.
+    // The cheaper of a diff against the last look and the full list, as in BrowserBear.
     static func diff(_ before: [String]?, _ after: [String]) -> (full: Bool, text: String) {
         guard let before else { return (true, after.joined(separator: "\n")) }
         let was = Set(before), now = Set(after)

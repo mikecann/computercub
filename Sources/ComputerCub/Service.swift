@@ -4,14 +4,14 @@ import ApplicationServices
 // macOS gives Accessibility and Screen Recording to the "responsible" process. A bare CLI
 // run by an agent counts as part of whatever started it (Threadbear Runner, Terminal),
 // so the grants would go to the wrong app. Instead the CLI hands each command to
-// Mr Clicky.app over a Unix socket, the way Paws hands them to its service, and Mr Clicky.app
+// ComputerCub.app over a Unix socket, the way BrowserBear hands them to its service, and ComputerCub.app
 // holds the grants under Mike's code signature.
 enum Service {
     static func run() -> Never {
         signal(SIGPIPE, SIG_IGN)
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        // Asking at launch puts both prompts up at once, naming Mr Clicky.
+        // Asking at launch puts both prompts up at once, naming ComputerCub.
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(prompt) || !CGPreflightScreenCaptureAccess() {
             if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
@@ -21,7 +21,7 @@ enum Service {
         do {
             try listen()
         } catch {
-            FileHandle.standardError.write("mr-clicky: \(error)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("computercub: \(error)\n".data(using: .utf8)!)
             exit(1)
         }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
@@ -36,12 +36,12 @@ enum Service {
         try FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         unlink(Paths.socket)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw ClickyError("Couldn't make a socket.") }
+        guard fd >= 0 else { throw CubError("Couldn't make a socket.") }
         var addr = sockaddr_un(path: Paths.socket)
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard bound == 0 else { throw ClickyError("Couldn't listen on \(Paths.socket): \(String(cString: strerror(errno)))") }
+        guard bound == 0 else { throw CubError("Couldn't listen on \(Paths.socket): \(String(cString: strerror(errno)))") }
         // Only Mike's own processes can drive his Mac through this.
         chmod(Paths.socket, 0o600)
         Darwin.listen(fd, 16)
@@ -91,7 +91,7 @@ enum Client {
             }
         }
         guard fd >= 0 else {
-            FileHandle.standardError.write("mr-clicky: couldn't start \(app.path)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("computercub: couldn't start \(app.path)\n".data(using: .utf8)!)
             return 1
         }
         defer { close(fd) }
@@ -100,7 +100,7 @@ enum Client {
         Wire.send(fd, ["args": args, "cwd": FileManager.default.currentDirectoryPath])
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
-            FileHandle.standardError.write("mr-clicky: no answer from Mr Clicky.app\n".data(using: .utf8)!)
+            FileHandle.standardError.write("computercub: no answer from ComputerCub.app\n".data(using: .utf8)!)
             return 1
         }
         return finish(Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? ""))
@@ -110,7 +110,7 @@ enum Client {
         if r.ok {
             print(r.out)
         } else {
-            FileHandle.standardError.write("mr-clicky: \(r.out)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("computercub: \(r.out)\n".data(using: .utf8)!)
         }
         return r.ok ? 0 : 1
     }
@@ -129,7 +129,7 @@ enum Client {
         return fd
     }
 
-    // ~/.local/bin/mr-clicky is a link into the bundle; follow it to find Mr Clicky.app.
+    // ~/.local/bin/computercub is a link into the bundle; follow it to find ComputerCub.app.
     private static func appBundle() -> URL? {
         var size: UInt32 = 0
         _NSGetExecutablePath(nil, &size)

@@ -44,7 +44,7 @@ final class Handoffs: NSObject {
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.titled, .utilityWindow, .nonactivatingPanel],
                             backing: .buffered, defer: false)
-        panel.title = "Mr Clicky"
+        panel.title = "ComputerCub"
         panel.contentView = stack
         panel.level = .floating
         panel.isFloatingPanel = true
