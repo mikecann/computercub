@@ -131,6 +131,27 @@ final class Desktop {
             .map { Win(el: $0, app: app, id: $0.windowID) }
     }
 
+    // The app's other on-screen windows over this one that aren't windows of their own in
+    // Accessibility: an open menu (its own window, layer 101), a popover (layer 0, but
+    // missing from AXWindows), a sheet. Their elements hang off a control in the window,
+    // so neither a window-only screenshot nor a walk that stops at buttons sees them.
+    func overlays(of win: Win) -> [(id: CGWindowID, frame: CGRect, layer: Int)] {
+        guard let wf = win.el.frame else { return [] }
+        let own = Set(windows(of: win.app).map(\.id))
+        let near = wf.insetBy(dx: -40, dy: -40)
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return info.compactMap { w in
+            guard (w[kCGWindowOwnerPID as String] as? Int32) == win.pid,
+                  let n = w[kCGWindowNumber as String] as? Int, !own.contains(CGWindowID(n)),
+                  let layer = w[kCGWindowLayer as String] as? Int, layer >= 0,
+                  (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let b = w[kCGWindowBounds as String] as? NSDictionary,
+                  let f = CGRect(dictionaryRepresentation: b), f.width > 2, f.height > 2, f.intersects(near)
+            else { return nil }
+            return (CGWindowID(n), f, layer)
+        }
+    }
+
     func findApp(_ query: String) throws -> NSRunningApplication {
         let q = query.lowercased()
         let all = apps()

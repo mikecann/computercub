@@ -58,6 +58,9 @@ enum Snapshot {
         var emptyWebArea = false
         var sawWebArea = false
         var truncated = false
+        // The menus and popovers the walk went through: whether a menu on screen was listed,
+        // and so a popover found by hit-testing isn't listed twice.
+        var floating: [AXUIElement] = []
         let deadline = Date().addingTimeInterval(6)
 
         init(_ win: Win, _ desk: Desktop, all: Bool) {
@@ -92,6 +95,7 @@ enum Snapshot {
 
             if let landmark = landmark(role, sub, v, el) {
                 lines.append(landmark)
+                if role == "AXMenu" || role == "AXPopover" { floating.append(el) }
                 if role == "AXWebArea" {
                     inWeb = true
                     sawWebArea = true
@@ -265,9 +269,75 @@ enum Snapshot {
                 w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
             }
         }
+        let overlays = desk.overlays(of: win)
+        var found = w.floating.contains { $0.string(kAXRoleAttribute) == "AXMenu" }
+        // An open menu is a window at layer 101 and up. A freshly launched SwiftUI app can
+        // take a moment to hang a just-opened menu off its button, so look again before
+        // reporting no menu.
+        let menuOpen = overlays.contains { $0.layer >= 101 }
+        var menuBar: [String] = []
+        if menuOpen && !found {
+            menuBar = menuBarMenu(win, w)
+            found = !menuBar.isEmpty
+        }
+        for _ in 0..<4 where menuOpen && !found {
+            usleep(250_000)
+            w = Walker(win, desk, all: all)
+            w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
+            found = w.floating.contains { $0.string(kAXRoleAttribute) == "AXMenu" }
+        }
+        var out = w.lines + menuBar + popovers(win, overlays.filter { $0.layer < 101 }, w)
+        // So that "no menu listed" can be trusted to mean no menu.
+        if menuOpen && !found { out.append("[menu open on screen, but its items aren't readable yet; snap again]") }
         desk.signatures[win.id] = w.signatures
-        var out = w.lines
         if w.truncated { out.append("… stopped after \(w.visited) elements; `computercub read` or a narrower window helps") }
+        return out
+    }
+
+    // A menu pulled down from the app's menu bar (File, Edit) isn't in the window at all.
+    private static func menuBarMenu(_ win: Win, _ w: Walker) -> [String] {
+        let app = AXUIElementCreateApplication(win.pid)
+        AXUIElementSetMessagingTimeout(app, 1.5)
+        guard let bar = app.element(kAXMenuBarAttribute) else { return [] }
+        for item in bar.elements(kAXChildrenAttribute) where (item.attr(kAXSelectedAttribute) as? Bool) == true {
+            for menu in item.elements(kAXChildrenAttribute) where menu.string(kAXRoleAttribute) == "AXMenu" {
+                let before = w.lines.count
+                w.walk(menu, depth: 0, inWeb: false, row: nil, inDialog: false)
+                return Array(w.lines[before...])
+            }
+        }
+        return []
+    }
+
+    // A popover hangs off the control that opened it, which the walk doesn't open up, so
+    // it's found by hit-testing into its window (no pointer involved). Hit-testing doesn't
+    // reach menus (it answers with the menu bar), which is why they're handled above.
+    private static func popovers(_ win: Win, _ overlays: [(id: CGWindowID, frame: CGRect, layer: Int)], _ w: Walker) -> [String] {
+        guard !overlays.isEmpty else { return [] }
+        let app = AXUIElementCreateApplication(win.pid)
+        AXUIElementSetMessagingTimeout(app, 1.5)
+        var out: [String] = []
+        var seen = w.floating
+        for o in overlays {
+            var found: AXUIElement?
+            for (fx, fy) in [(0.5, 0.5), (0.5, 0.25), (0.5, 0.75)] where found == nil {
+                var hit: AXUIElement?
+                guard AXUIElementCopyElementAtPosition(app, Float(o.frame.minX + o.frame.width * fx), Float(o.frame.minY + o.frame.height * fy), &hit) == .success else { continue }
+                var el = hit
+                for _ in 0..<30 {
+                    guard let e = el else { break }
+                    let role = e.string(kAXRoleAttribute)
+                    if role == "AXPopover" { found = e; break }
+                    if role == kAXWindowRole || role == "AXApplication" { break }
+                    el = e.element(kAXParentAttribute)
+                }
+            }
+            guard let el = found, !seen.contains(where: { CFEqual($0, el) }) else { continue }
+            seen.append(el)
+            let before = w.lines.count
+            w.walk(el, depth: 0, inWeb: false, row: nil, inDialog: false)
+            out += w.lines[before...]
+        }
         return out
     }
 

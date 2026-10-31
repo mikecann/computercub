@@ -675,9 +675,10 @@ final class Commands {
     private func shot(_ target: String, max: Int) throws -> String {
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
             let (el, win) = try desk.lookup(target)
-            return try Shot.capture(win, crop: el.frame, maxSide: max)
+            return try Shot.capture(win, crop: el.frame, maxSide: max, overlays: desk.overlays(of: win))
         }
-        return try Shot.capture(try desk.window(target), crop: nil, maxSide: max)
+        let win = try desk.window(target)
+        return try Shot.capture(win, crop: nil, maxSide: max, overlays: desk.overlays(of: win))
     }
 
     private func handoff(_ a: Args, agent: String?) throws -> String {

@@ -31,8 +31,10 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    field from the background, it brings the window up and clicks the field first.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
-7. `computercub shot <window|ref>` only when you need to see it. It's window-only; run
-   `computercub clean` when you're done with personal screenshots.
+7. `computercub shot <window|ref>` only when you need to see it. It's that window only, plus
+   any menu or popover it has open; run `computercub clean` when you're done with personal
+   screenshots. `snap` lists open menus and popovers too, and says when a menu is on screen
+   but can't be read yet, so no `[menu]` means no menu.
 8. While the screen is locked macOS hides all windows from Accessibility, so window commands
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
