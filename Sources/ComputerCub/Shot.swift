@@ -4,7 +4,11 @@ import UniformTypeIdentifiers
 
 enum Paths {
     static let home = FileManager.default.homeDirectoryForCurrentUser
-    static let support = home.appendingPathComponent("Library/Application Support/ComputerCub")
+    // COMPUTERCUB_HOME lets a dev build serve beside the installed app, with its own socket
+    // and saved refs, so testing a change doesn't stop ComputerCub for every other agent.
+    static let support = ProcessInfo.processInfo.environment["COMPUTERCUB_HOME"].map { URL(fileURLWithPath: $0) }
+        ?? home.appendingPathComponent("Library/Application Support/ComputerCub")
+    static let isDev = ProcessInfo.processInfo.environment["COMPUTERCUB_HOME"] != nil
     static let socket = support.appendingPathComponent("computercub.sock").path
     static let cache = home.appendingPathComponent("Library/Caches/ComputerCub")
     static let shots = cache.appendingPathComponent("shots")

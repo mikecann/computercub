@@ -19,14 +19,16 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    got). Each answers with what changed, so don't snap again after it. In a file picker,
    cmd+shift+g opens Go to Folder for hidden places like ~/Library.
 4. Cmd shortcuts bring the window forward by themselves. If another key does nothing in a
-   background app, retry with `--front`. If a click needs a real mouse, `--mouse`. Both
-   briefly bring the window forward. `--mouse` scrolls the control into view first and
-   won't click if something else would catch it.
+   background app, retry with `--front`, which briefly brings the window forward.
+   `--mouse` takes Mike's real pointer away from him, so it's the last resort, for a click
+   nothing else reaches. A plain `click` flips System Settings switches, even ones scrolled
+   out of view. `click --double` opens things (a Finder sidebar item, a file) without the
+   mouse. For a web page's "Choose files", use `browserbear upload`. Don't write your own
+   mouse-event tool to get round this: it takes his pointer the same way.
 5. `computercub type` without flags only sets the field's value, which apps may not notice: a
    rename in Finder shows the new text and stays the old name. Use `--submit` to have it
    typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
-   field from the background, it brings the window up and clicks the field first. Selecting
-   a row doesn't open it in Finder's sidebar: use `click --mouse`.
+   field from the background, it brings the window up and clicks the field first.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
 7. `computercub shot <window|ref>` only when you need to see it. It's window-only; run

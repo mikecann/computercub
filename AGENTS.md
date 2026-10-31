@@ -9,10 +9,13 @@ API. README.md has the why and the shape; this is for working on it.
   `Input.swift` keys and mouse; `Shot.swift` ScreenCaptureKit; `Handoff.swift` the panel.
 - Build small: `swift build` (debug, about 15 s) while iterating. `./scripts/install.sh`
   makes the signed release app. The M5 is often under heavy load, so prefix with `nice`.
-- To test without touching ComputerCub.app's own permissions, run the debug build as the
-  service from your shell (`.build/debug/computercub serve`, in the background) and use the
-  installed `computercub` CLI against it. It borrows whatever grants your terminal or Threadbear
-  Runner has. `computercub quit` stops it.
+- To test without touching ComputerCub.app or the agents using it, give the debug build its
+  own folder: `export COMPUTERCUB_HOME=/tmp/cub-dev`, start `.build/debug/computercub serve`
+  in the background, and use `.build/debug/computercub` against it (same env). It borrows
+  whatever grants your terminal or Threadbear Runner has. `.build/debug/computercub quit`
+  with the env set stops it; without the env, `quit` stops everyone's ComputerCub.
+- Clicks and keys go through Accessibility and post to the app's process. Real mouse events
+  take Mike's pointer, so add another route before reaching for `Input.click`.
 - Test on harmless things (Finder windows you open yourself, System Settings' About
   pane). Close what you open, put back any tab you changed, and run `computercub clean` after
   screenshots. Ask Mike before anything that posts, sends, buys, deletes or changes a

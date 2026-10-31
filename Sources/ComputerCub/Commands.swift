@@ -50,7 +50,7 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub snap <window> --find <text>     just the controls whose line has that text,
                                               searching the whole window
   computercub read <window|ref>               the words in a window or element
-  computercub click <ref> [--mouse] [--double]
+  computercub click <ref> [--double] [--mouse]
   computercub type <ref> <text> [--submit] [--keys]
                                               replaces the field's text; passwords are refused.
                                               Alone it just sets the value; --submit and --keys
@@ -346,6 +346,14 @@ final class Commands {
     private func click(_ ref: String, mouse: Bool, double: Bool) throws -> String {
         let (el, win) = try desk.lookup(ref)
         return try acting(win) {
+            // A double-click opens things, and most rows say so through AXOpen on their
+            // cell, so try that before borrowing Mike's pointer.
+            if double && !mouse, let target = openable(el) {
+                // Finder's sidebar answers AXOpen with "unsupported" (-25205) and opens
+                // the folder anyway, so the error code says nothing. The diff shows if it went.
+                target.perform("AXOpen")
+                return "Opened \(ref)."
+            }
             if mouse || double {
                 try Input.click(el, in: win, double: double)
                 return double ? "Double-clicked \(ref) with the mouse." : "Clicked \(ref) with the mouse."
@@ -358,7 +366,7 @@ final class Commands {
                 return "Pressed \(ref)."
             }
             if ["AXRow", "AXCell", "AXOutlineRow"].contains(role), el.set(kAXSelectedAttribute, kCFBooleanTrue) == .success {
-                return "Selected \(ref). If it should have opened too (Finder's sidebar), use --mouse."
+                return "Selected \(ref). If it should have opened too (Finder's sidebar), use --double."
             }
             if ["AXTextField", "AXTextArea", "AXComboBox"].contains(role), el.set(kAXFocusedAttribute, kCFBooleanTrue) == .success {
                 return el.isFocused ? "Focused \(ref)." : "\(ref) didn't take focus from the background. Try --mouse."
@@ -368,6 +376,14 @@ final class Commands {
             }
             throw CubError("\(ref) has nothing to press (it offers: \(actions.joined(separator: ", "))). Try --mouse.")
         }
+    }
+
+    // The element itself, its cells (a row), or the cell around it (a row's text).
+    private func openable(_ el: AXUIElement) -> AXUIElement? {
+        if el.actions.contains("AXOpen") { return el }
+        if let cell = el.elements(kAXChildrenAttribute).first(where: { $0.actions.contains("AXOpen") }) { return cell }
+        if let up = el.element(kAXParentAttribute), up.actions.contains("AXOpen") { return up }
+        return nil
     }
 
     private func type(_ ref: String, _ text: String, submit: Bool, keys: Bool) throws -> String {

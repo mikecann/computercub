@@ -75,8 +75,10 @@ enum Client {
             return 0
         }
         // A dev build outside the app bundle has no app to hold the grants, so it runs
-        // in-process (and only works if whatever started it has them).
+        // in-process (and only works if whatever started it has them), unless a dev
+        // `serve` with its own COMPUTERCUB_HOME is listening: then refs last between commands.
         guard let app = appBundle(), !args.contains("--local") else {
+            if Paths.isDev, !args.contains("--local"), let reply = call(args, app: nil) { return finish(reply) }
             return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: Agent.current()))
         }
         guard var reply = call(args, app: app) else { return 1 }
@@ -90,10 +92,12 @@ enum Client {
         return finish(reply)
     }
 
-    // Sends one command to ComputerCub.app, starting the app if it isn't running.
-    private static func call(_ args: [String], app: URL) -> Reply? {
+    // Sends one command to ComputerCub.app, starting the app if it isn't running. With no
+    // app, only to a service that's already up.
+    private static func call(_ args: [String], app: URL?) -> Reply? {
         var fd = connect()
-        if fd < 0 {
+        if fd < 0 && app == nil { return nil }
+        if fd < 0, let app {
             // `open` starts it through LaunchServices, so it's its own responsible process.
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -106,7 +110,7 @@ enum Client {
             }
         }
         guard fd >= 0 else {
-            FileHandle.standardError.write("computercub: couldn't start \(app.path)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("computercub: couldn't start \(app?.path ?? "ComputerCub")\n".data(using: .utf8)!)
             return nil
         }
         defer { close(fd) }
