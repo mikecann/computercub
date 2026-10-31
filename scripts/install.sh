@@ -22,6 +22,8 @@ for SIZE in 16 32 128 256 512; do
   sips -z "$DOUBLE" "$DOUBLE" "$ROOT/icons/computercub.png" --out "$STAGE_ROOT/icon.iconset/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
 done
 iconutil -c icns "$STAGE_ROOT/icon.iconset" -o "$STAGE/Contents/Resources/ComputerCub.icns"
+# The bear that peers over the window an agent is in.
+cp "$ROOT/icons/peek.png" "$STAGE/Contents/Resources/peek.png"
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -116,8 +116,8 @@ final class Marks: NSObject {
         if m.outline.frame != outer { m.outline.setFrame(outer, display: true) }
 
         let size = BearView.size
-        // The bear's chin and paws sit on the ring, which runs 3.5 pt outside the window.
-        var origin = NSPoint(x: frame.maxX - size.width - 36, y: frame.maxY + 3.5 - BearView.edge)
+        // The bear's chin sits on top of the ring, which reaches 5 pt outside the window.
+        var origin = NSPoint(x: frame.maxX - size.width - 36, y: frame.maxY + 4.5 - BearView.edge)
         // Up against the menu bar there's no room above, so it sits in the title bar.
         let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? primary
         if origin.y + size.height > screen.visibleFrame.maxY { origin.y = frame.maxY - size.height - 4 }
@@ -198,64 +198,25 @@ final class Marks: NSObject {
     }
 }
 
-// The ComputerCub bear (icons/computercub.svg) peering over the top of the window, paws
-// hooked over the edge. Drawn on a 64 × 44 grid, y down, with the edge at y = 34: the
-// head is clipped there, so only the part above it shows. Cream outlines keep it
-// readable on dark windows and wallpapers.
+// The ComputerCub bear from the README and video, peering over the top of the window with
+// its paws hooked over the edge (icons/peek.png). Its head stops in a straight line at the
+// edge, and only the paws carry on below it.
 private final class BearView: NSView {
-    static let scale: CGFloat = 1.25
-    static let size = NSSize(width: 64 * scale, height: 44 * scale)
+    static let size = NSSize(width: 64, height: 49.5)
     // How far up from the bottom of the view the edge it peers over is.
-    static let edge: CGFloat = (44 - 34) * scale
+    static let edge: CGFloat = 3.25
 
-    private static let fur = NSColor(srgbRed: 0x2B / 255.0, green: 0x27 / 255.0, blue: 0x22 / 255.0, alpha: 1)
-    private static let cream = NSColor(srgbRed: 0xF4 / 255.0, green: 0xEF / 255.0, blue: 0xE6 / 255.0, alpha: 1)
-
-    override var isFlipped: Bool { true }
+    // install.sh puts it in the app; the debug build has no app, so it reads the repo's copy.
+    private static let image = NSImage(contentsOf: Bundle.main.url(forResource: "peek", withExtension: "png")
+        ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../icons/peek.png"))
 
     // ComputerCub is never the active app, so the first click has to count.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { Marks.shared.stop(window) }
 
     override func draw(_ dirty: NSRect) {
-        guard let g = NSGraphicsContext.current?.cgContext else { return }
-        g.scaleBy(x: Self.scale, y: Self.scale)
-        func circle(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat) -> CGRect { CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2) }
-        func oval(_ x: CGFloat, _ y: CGFloat, _ rx: CGFloat, _ ry: CGFloat) -> CGRect { CGRect(x: x - rx, y: y - ry, width: rx * 2, height: ry * 2) }
-        func blob(_ r: CGRect, fill: NSColor, line: Bool) {
-            g.setFillColor(fill.cgColor)
-            g.fillEllipse(in: r)
-            if line {
-                g.setStrokeColor(Self.cream.cgColor)
-                g.setLineWidth(1.5)
-                g.strokeEllipse(in: r)
-            }
-        }
-
-        g.saveGState()
-        g.clip(to: CGRect(x: 0, y: 0, width: 64, height: 34))
-        for x: CGFloat in [20, 44] {
-            blob(circle(x, 17, 6), fill: Self.fur, line: true)
-            blob(circle(x, 17, 2.6), fill: Self.cream, line: false)
-        }
-        blob(circle(32, 31, 15), fill: Self.fur, line: true)
-        // Fur over the inner half of the ears' outlines, so the head reads as one shape.
-        blob(circle(32, 31, 14.25), fill: Self.fur, line: false)
-        blob(circle(26.5, 27, 2), fill: Self.cream, line: false)
-        blob(circle(37.5, 27, 2), fill: Self.cream, line: false)
-        blob(oval(32, 35.5, 6.5, 4.8), fill: Self.cream, line: false)
-        blob(oval(32, 32.6, 2.3, 1.6), fill: Self.fur, line: false)
-        g.restoreGState()
-
-        for x: CGFloat in [17.5, 46.5] { blob(oval(x, 34.5, 6.5, 4.6), fill: Self.fur, line: true) }
-        g.setStrokeColor(Self.cream.cgColor)
-        g.setLineWidth(1.3)
-        g.setLineCap(.round)
-        for x: CGFloat in [15.3, 19.7, 44.3, 48.7] {
-            g.move(to: CGPoint(x: x, y: 31.6))
-            g.addLine(to: CGPoint(x: x, y: 34))
-        }
-        g.strokePath()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        Self.image?.draw(in: bounds)
     }
 }
 

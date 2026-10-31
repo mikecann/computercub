@@ -117,7 +117,7 @@ Running the debug build as the service from your terminal borrows your terminal'
 
 ## Art
 
-`docs/header.webp` is a generated banner for the public site. `icons/computercub.svg` is the app icon, a cub with a mouse pointer in the same colours as BrowserBear's paw, and `icons/computercub.png` is rendered from it.
+`docs/header.webp` is a generated banner for the public site. `icons/computercub.svg` is the app icon, a cub with a mouse pointer in the same colours as BrowserBear's paw, and `icons/computercub.png` is rendered from it. `icons/peek.png` is the generated cub that peers over the window an agent is in.
 
 ## More tools
 
