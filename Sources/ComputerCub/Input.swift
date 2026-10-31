@@ -360,6 +360,65 @@ enum Input {
         return chain(hit).contains { CFEqual($0, el) } || chain(el).contains { CFEqual($0, hit) }
     }
 
+    // A click sent to the window's own process, so Mike's pointer doesn't move and the
+    // window stays where it is, behind his. Plain CGEvent.postToPid clicks get dropped
+    // (Finder ignored them); what makes AppKit take one is naming the window in fields
+    // 91, 92 and 51, giving the point inside it with the private CGEventSetWindowLocation,
+    // and posting through SkyLight, as Warp, cua and agent-desktop do. Native hover can't be
+    // done this way: tracking areas follow the real cursor, not posted moves.
+    static func post(click el: AXUIElement, in win: Win, double: Bool) throws {
+        reveal(el, in: win)
+        guard let f = el.frame, f.width > 0, f.height > 0, let w = win.el.frame else { throw CubError("Can't tell where that is in its window.") }
+        guard shown(el, in: win) else {
+            throw CubError("That's scrolled out of view and wouldn't scroll in, so a click would land on something else. Not clicking.")
+        }
+        let p = CGPoint(x: f.midX, y: f.midY)
+        // Other apps' windows on top don't matter, as the click goes straight to this one,
+        // but something of its own over the spot (a popover, an overlay) would catch it.
+        var hit: AXUIElement?
+        if AXUIElementCopyElementAtPosition(AXUIElementCreateApplication(win.pid), Float(p.x), Float(p.y), &hit) == .success,
+           let hit, hit.pid == win.pid, !lands(on: el, hit: hit) {
+            let what = [hit.string(kAXRoleDescriptionAttribute), hit.string(kAXTitleAttribute) ?? hit.string(kAXDescriptionAttribute)]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+            throw CubError("Something else is at that spot (\(what.isEmpty ? "another element" : what)), so a click would land there. Not clicking.")
+        }
+        let id = Int64(win.id), local = CGPoint(x: p.x - w.minX, y: p.y - w.minY)
+        let src = CGEventSource(stateID: .privateState)
+        func send(_ type: CGEventType, _ n: Int64) {
+            guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+            e.setIntegerValueField(.mouseEventClickState, value: n)
+            e.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: id)
+            e.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: id)
+            e.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(win.pid))
+            e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
+            e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
+            e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseDown ? 1 : 0)
+            setWindowLocation?(e, local)
+            // SkyLight's own post reaches text views (TextEdit) that CGEvent.postToPid's doesn't.
+            if let skyPost { skyPost(win.pid, e) } else { e.postToPid(win.pid) }
+        }
+        send(.mouseMoved, 0)
+        usleep(15_000)
+        for n in 1...(double ? 2 : 1) {
+            send(.leftMouseDown, Int64(n))
+            usleep(10_000)
+            send(.leftMouseUp, Int64(n))
+            usleep(30_000)
+        }
+    }
+
+    private typealias SetWindowLocation = @convention(c) (CGEvent, CGPoint) -> Void
+    private typealias PostToPid = @convention(c) (pid_t, CGEvent) -> Void
+    // Private, so looked up at run time: a macOS that drops them makes clicks miss rather
+    // than ComputerCub fail to start.
+    private static let skyLight: Void = { dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY); return () }()
+    private static func symbol<T>(_ name: String, as: T.Type) -> T? {
+        _ = skyLight
+        return dlsym(UnsafeMutableRawPointer(bitPattern: -2), name).map { unsafeBitCast($0, to: T.self) }
+    }
+    private static let setWindowLocation = symbol("CGEventSetWindowLocation", as: SetWindowLocation.self)
+    private static let skyPost = symbol("SLEventPostToPid", as: PostToPid.self)
+
     static func click(_ el: AXUIElement, in win: Win, double: Bool) throws {
         bringForward(win)
         usleep(300_000)

@@ -50,7 +50,9 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub snap <window> --find <text>     just the controls whose line has that text,
                                               searching the whole window
   computercub read <window|ref>               the words in a window or element
-  computercub click <ref> [--double] [--mouse]
+  computercub click <ref> [--double] [--mouse] [--pointer]
+                                              --mouse sends a click to the window, pointer
+                                              untouched; --pointer uses the real one
   computercub type <ref> <text> [--submit] [--keys]
                                               replaces the field's text; passwords are refused.
                                               Alone it just sets the value; --submit and --keys
@@ -145,7 +147,7 @@ final class Commands {
             if let text = a.flags["find"] { return try find(try a.at(0, "a window"), text) }
             return try snap(try a.at(0, "a window"), full: a.has("full"), all: a.has("all"))
         case "read": return try read(try a.at(0, "a window or ref"))
-        case "click": return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"))
+        case "click": return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"), pointer: a.has("pointer"))
         case "type": return try type(try a.at(0, "a ref"), try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"))
         case "press": return try press(try a.at(0, "a window or ref"), Array(a.pos.dropFirst()), front: a.has("front"))
         case "menu": return try menu(try a.at(0, "an app"), a.pos.count > 1 ? a.pos[1] : nil)
@@ -343,20 +345,24 @@ final class Commands {
         return (sheet, host)
     }
 
-    private func click(_ ref: String, mouse: Bool, double: Bool) throws -> String {
+    private func click(_ ref: String, mouse: Bool, double: Bool, pointer: Bool) throws -> String {
         let (el, win) = try desk.lookup(ref)
         return try acting(win) {
             // A double-click opens things, and most rows say so through AXOpen on their
             // cell, so try that before borrowing Mike's pointer.
-            if double && !mouse, let target = openable(el) {
+            if double && !mouse && !pointer, let target = openable(el) {
                 // Finder's sidebar answers AXOpen with "unsupported" (-25205) and opens
                 // the folder anyway, so the error code says nothing. The diff shows if it went.
                 target.perform("AXOpen")
                 return "Opened \(ref)."
             }
-            if mouse || double {
+            if pointer {
                 try Input.click(el, in: win, double: double)
-                return double ? "Double-clicked \(ref) with the mouse." : "Clicked \(ref) with the mouse."
+                return "\(double ? "Double-clicked" : "Clicked") \(ref) with \(userName)'s pointer."
+            }
+            if mouse || double {
+                try Input.post(click: el, in: win, double: double)
+                return "\(double ? "Double-clicked" : "Clicked") \(ref) with a click sent to the window, so the pointer didn't move. If nothing changed, --pointer clicks with the real one."
             }
             let role = el.string(kAXRoleAttribute) ?? ""
             let actions = el.actions
@@ -431,9 +437,10 @@ final class Commands {
         }
         try Input.toWindow(win, front: true) { to in
             if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
-            // The first click on a page that's just loaded can go unnoticed, hence two tries.
-            for _ in 0..<2 where !el.isFocused {
-                try Input.click(el, in: win, double: false)
+            // The first click on a page that's just loaded can go unnoticed, hence two tries:
+            // one sent to the window, then Mike's pointer if that didn't take.
+            for attempt in 0..<2 where !el.isFocused {
+                if attempt == 0 { try Input.post(click: el, in: win, double: false) } else { try Input.click(el, in: win, double: false) }
                 usleep(250_000)
             }
             guard try send(to) else {

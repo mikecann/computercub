@@ -22,11 +22,13 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    cmd+w on a window without tabs, which uses its close button and stays in the background.
    If another key does nothing in a background app, retry with `--front`, which briefly
    brings the window forward. Prefer a `click` on a button over a shortcut when there's one.
-   `--mouse` takes Mike's real pointer away from him, so it's the last resort, for a click
-   nothing else reaches. A plain `click` flips System Settings switches, even ones scrolled
-   out of view. `click --double` opens things (a Finder sidebar item, a file) without the
-   mouse. For a web page's "Choose files", use `browserbear upload`. Don't write your own
-   mouse-event tool to get round this: it takes his pointer the same way.
+   When a plain `click` does nothing, `--mouse` sends a mouse click to the window itself:
+   Mike's pointer doesn't move and the window stays in the background. `--pointer` uses
+   his real pointer and brings the window forward, so it's the last resort, for when
+   `--mouse` changed nothing (hover-only controls in Mac apps need it). A plain `click`
+   flips System Settings switches, and `click --double` opens things (a Finder sidebar
+   item, a file). For a web page's "Choose files", use `browserbear upload`. Don't write
+   your own mouse-event tool: it takes his pointer.
 5. `computercub type` without flags only sets the field's value, which apps may not notice: a
    rename in Finder shows the new text and stays the old name. Use `--submit` to have it
    typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
