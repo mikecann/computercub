@@ -18,8 +18,10 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    `computercub move <window> x y [w h]`, `computercub scroll <window> down` (says how far down it
    got). Each answers with what changed, so don't snap again after it. In a file picker,
    cmd+shift+g opens Go to Folder for hidden places like ~/Library.
-4. Cmd shortcuts bring the window forward by themselves. If another key does nothing in a
-   background app, retry with `--front`, which briefly brings the window forward.
+4. Cmd shortcuts bring the window forward by themselves, which takes Mike's focus, except
+   cmd+w on a window without tabs, which uses its close button and stays in the background.
+   If another key does nothing in a background app, retry with `--front`, which briefly
+   brings the window forward. Prefer a `click` on a button over a shortcut when there's one.
    `--mouse` takes Mike's real pointer away from him, so it's the last resort, for a click
    nothing else reaches. A plain `click` flips System Settings switches, even ones scrolled
    out of view. `click --double` opens things (a Finder sidebar item, a file) without the

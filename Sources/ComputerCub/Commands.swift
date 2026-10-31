@@ -463,6 +463,19 @@ final class Commands {
         let shortcut = !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier
             && combos.contains { $0.lowercased().split(separator: "+").dropLast().contains { $0 == "cmd" || $0 == "command" } }
         let sheet = Input.onSheet(win)
+        // Cmd+w is the shortcut agents send most, and the window's own close button works
+        // from the background, so this one needn't take Mike's focus. Picking the menu item
+        // doesn't: background apps grey out Close (nothing is their key window), and a
+        // greyed-out item does nothing even when pressed through AX. Not where cmd+w would
+        // close a tab instead: in a browser, or a window with tabs.
+        let combo = combos.first?.lowercased().replacingOccurrences(of: "command", with: "cmd") ?? ""
+        if shortcut, !sheet, combos.count == 1, combo == "cmd+w", !hasTabs(win),
+           let close = win.el.element(kAXCloseButtonAttribute), (close.attr(kAXEnabledAttribute) as? Bool) != false {
+            return try acting(win) {
+                close.perform(kAXPressAction)
+                return "Pressed cmd+w (the window's close button, so it stayed in the background)."
+            }
+        }
         return try acting(win) {
             let moved = try Input.toWindow(win, front: front || shortcut) { to in for c in combos { try Input.key(c, pid: to) } }
             let how = front ? " with the window in front"
@@ -471,6 +484,20 @@ final class Commands {
                 : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
             return "Pressed \(combos.joined(separator: " "))\(how)."
         }
+    }
+
+    private func hasTabs(_ win: Win) -> Bool {
+        let browsers: Set<String> = ["com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "net.imput.helium",
+                                     "org.mozilla.firefox", "com.microsoft.edgemac", "com.brave.Browser"]
+        if browsers.contains(win.app.bundleIdentifier ?? "") { return true }
+        func look(_ el: AXUIElement, _ depth: Int) -> Bool {
+            for kid in el.elements(kAXChildrenAttribute) {
+                if kid.string(kAXRoleAttribute) == kAXTabGroupRole { return true }
+                if depth < 2, look(kid, depth + 1) { return true }
+            }
+            return false
+        }
+        return look(win.el, 0)
     }
 
     private func menu(_ appQuery: String, _ path: String?) throws -> String {
