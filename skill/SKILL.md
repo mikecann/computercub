@@ -1,6 +1,6 @@
 ---
 name: computercub
-description: ComputerCub, computer use for your Mac. Drive Mac apps (Finder, System Settings, Xcode, Helium, native dialogs and file pickers) and the parts of Chrome extensions can't reach (Chrome Web Store pages, chrome:// pages, Chrome's own toolbar and tabs) with the `computercub` command. Use when a job needs a native app or a page BrowserBear can't open.
+description: ComputerCub, computer use for your Mac. Drive Mac apps (Finder, System Settings, Xcode, Helium, native dialogs and file pickers) and the parts of Chrome extensions can't reach (Chrome Web Store pages, chrome:// pages, Chrome's own toolbar and tabs) with the `computercub` command, and see Mike's iPhone screen through iPhone Mirroring. Use when a job needs a native app, a page BrowserBear can't open, or a look at his phone before asking him to check it.
 ---
 
 # ComputerCub
@@ -42,6 +42,19 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 8. While the screen is locked macOS hides all windows from Accessibility, so window commands
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
+
+## iPhone Mirroring
+
+Before asking Mike to check something on his iPhone 15 Pro Max (a setting, what's on screen),
+look yourself. He's had to remind agents that this exists.
+
+- `open -a "iPhone Mirroring"`, wait a few seconds, then `computercub shot "iPhone Mirroring"`.
+  The window exposes nothing to Accessibility, so `snap` gives no refs and shots are how you read it.
+- You can't tap in it yet, as `click` needs a ref. Use `xcrun devicectl` to install and launch apps.
+- It only connects while the phone is locked. "iPhone in Use" means he has it in his hand, so
+  don't wait on it. If it's stuck setting up, run `killall rapportd sharingd` (they relaunch) and reopen it.
+- It draws the Dynamic Island plain black, so the blue location arrow doesn't show.
+- Quit it when you're done: `osascript -e 'quit app "iPhone Mirroring"'`.
 
 The window you're in shows Mike a blue outline with a bear peering over it. If a command says he
 clicked stop, stop and ask him. Run `computercub resume` only once he says carry on.
