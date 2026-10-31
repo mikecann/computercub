@@ -20,4 +20,8 @@ API. README.md has the why and the shape; this is for working on it.
   pane). Close what you open, put back any tab you changed, and run `computercub clean` after
   screenshots. Ask Mike before anything that posts, sends, buys, deletes or changes a
   setting.
+- Live tests share Mike's screen. Before one, check he's away (`ioreg -c IOHIDSystem | awk '/HIDIdleTime/{print int($NF/1e9); exit}'`
+  gives seconds since his last input; under a minute or two means he's typing) and if he is, wait or ask. Even a
+  background press can cost him keystrokes, and anything that brings a window forward (`--front`, osascript
+  `activate`) certainly does.
 - Keep output small: every line in a snapshot costs every agent tokens on every look.
