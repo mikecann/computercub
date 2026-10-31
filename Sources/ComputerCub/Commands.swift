@@ -53,15 +53,16 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub click <ref> [--double] [--mouse] [--pointer]
                                               --mouse sends a click to the window, pointer
                                               untouched; --pointer uses the real one
-  computercub type <ref> <text> [--submit] [--keys]
+  computercub type <ref> <text> [--submit] [--keys] [--front]
                                               replaces the field's text; passwords are refused.
                                               Alone it just sets the value; --submit and --keys
-                                              use real keys, for when the app has to notice
+                                              use real keys, for when the app has to notice.
+                                              If keys can't reach it, --front brings it up
   computercub press <window|ref> <keys>... [--front]
-                                              e.g. cmd+shift+g, return, escape, tab, down. Keys
-                                              go to the app in the background (cmd shortcuts
-                                              bring the window forward); if nothing happens,
-                                              --front brings it forward for any key
+                                              e.g. cmd+shift+g, return, escape, tab, down. The
+                                              window stays in the background: cmd shortcuts
+                                              press their menu item. Where keys can't reach it,
+                                              it says so; --front brings it forward
   computercub menu <app> [File > New Window]  list an app's menus, or pick an item
   computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
   computercub drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
@@ -148,10 +149,10 @@ final class Commands {
             return try snap(try a.at(0, "a window"), full: a.has("full"), all: a.has("all"))
         case "read": return try read(try a.at(0, "a window or ref"))
         case "click": return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"), pointer: a.has("pointer"))
-        case "type": return try type(try a.at(0, "a ref"), try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"))
+        case "type": return try type(try a.at(0, "a ref"), try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"), front: a.has("front"))
         case "press": return try press(try a.at(0, "a window or ref"), Array(a.pos.dropFirst()), front: a.has("front"))
         case "menu": return try menu(try a.at(0, "an app"), a.pos.count > 1 ? a.pos[1] : nil)
-        case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil)
+        case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil, front: a.has("front"))
         case "shot": return try shot(try a.at(0, "a window or ref"), max: Int(a.flags["max"] ?? "") ?? 1600)
         case "drag": return try drag(try a.at(0, "what to drag"), try a.at(1, "where to drop it"))
         case "move": return try move(try a.at(0, "a window"), Array(a.pos.dropFirst()))
@@ -392,7 +393,7 @@ final class Commands {
         return nil
     }
 
-    private func type(_ ref: String, _ text: String, submit: Bool, keys: Bool) throws -> String {
+    private func type(_ ref: String, _ text: String, submit: Bool, keys: Bool, front: Bool) throws -> String {
         let (el, win) = try desk.lookup(ref)
         let role = el.string(kAXRoleAttribute) ?? ""
         if role == "AXSecureTextField" || el.string(kAXSubroleAttribute) == "AXSecureTextField" {
@@ -408,7 +409,7 @@ final class Commands {
                     return "Set \(ref)'s text directly, so the app may not have noticed yet. --submit or --keys types it for real."
                 }
             }
-            let forward = try typeKeys(text, into: el, ref: ref, win: win, submit: submit)
+            let forward = try typeKeys(text, into: el, ref: ref, win: win, submit: submit, front: front)
             return "Typed into \(ref) with keys\(forward ? " with the window brought forward" : "")\(submit ? " and pressed Return" : "")."
         }
     }
@@ -417,23 +418,34 @@ final class Commands {
     // sent to the app never reach (Finder's page for a plugged-in iPhone belongs to
     // com.apple.amp.devicesui, though Accessibility says it's Finder's), and some only start
     // editing on a real click. So check the text landed, and if it didn't, do what Mike
-    // would: bring the window up, click the field, and use the keyboard. Returns whether
-    // the window had to come forward.
-    private func typeKeys(_ text: String, into el: AXUIElement, ref: String, win: Win, submit: Bool) throws -> Bool {
+    // would: bring the window up, click the field, and use the keyboard. That takes his
+    // focus, so only with --front (or with the app in front already); otherwise it says
+    // so and leaves the call to the agent. Returns whether the window came forward.
+    private func typeKeys(_ text: String, into el: AXUIElement, ref: String, win: Win, submit: Bool, front: Bool) throws -> Bool {
         func send(_ to: pid_t?) throws -> Bool {
             if !el.selectAllText() { try Input.key("cmd+a", pid: to) }
             try Input.type(text, pid: to)
             return el.waitForText(text)
         }
         if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
-        var landed = false
+        var why = el.isFocused ? "\(ref) already shows that text, so there's no telling whether keys land" : "\(ref) wouldn't take focus in the background"
         // If the field already shows this text, there's no telling whether keys landed.
         if el.isFocused, el.string(kAXValueAttribute) != text {
-            try Input.toWindow(win, front: false) { to in
-                landed = try send(to)
-                if landed && submit { try Input.key("return", pid: to) }
+            var landed = false
+            do {
+                try Input.toWindow(win, front: false) { to in
+                    landed = try send(to)
+                    if landed && submit { try Input.key("return", pid: to) }
+                }
+                if landed { return false }
+                why = "keys sent in the background didn't land in \(ref)" + (el.string(kAXValueAttribute).map { " (it shows \"\(clip($0))\")" } ?? "")
+            } catch is CubError where front {
+                // Keys can't get there from the background, and --front says come forward.
             }
-            if landed { return false }
+        }
+        if !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            throw CubError("Not typed: \(why). Bringing the window up to click it would take \(userName)'s focus; if it's worth that, run it again with --front. "
+                + "Without --submit or --keys, type just sets the text.")
         }
         try Input.toWindow(win, front: true) { to in
             if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
@@ -464,19 +476,20 @@ final class Commands {
             win = try desk.window(target)
         }
         for c in combos { _ = try Input.parse(c) }  // fail before sending any of them
-        // Cmd shortcuts are menu key equivalents, and macOS only fires those in the active
-        // app: Finder ignores cmd+w and cmd+shift+g sent to it in the background, and
-        // Chrome cmd+w. So they come forward without needing --front.
-        let shortcut = !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier
-            && combos.contains { $0.lowercased().split(separator: "+").dropLast().contains { $0 == "cmd" || $0 == "command" } }
-        let sheet = Input.onSheet(win)
+        // In front already (or asked to come forward), keys behave as Mike's would.
+        if front || win.pid == NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            return try acting(win) {
+                let moved = try Input.toWindow(win, front: front) { to in for c in combos { try Input.key(c, pid: to) } }
+                return "Pressed \(combos.joined(separator: " "))\(moved ? " with the window in front" : "")."
+            }
+        }
         // Cmd+w is the shortcut agents send most, and the window's own close button works
-        // from the background, so this one needn't take Mike's focus. Picking the menu item
-        // doesn't: background apps grey out Close (nothing is their key window), and a
-        // greyed-out item does nothing even when pressed through AX. Not where cmd+w would
-        // close a tab instead: in a browser, or a window with tabs.
+        // from the background. Picking the menu item doesn't: background apps grey out
+        // Close (nothing is their key window), and a greyed-out item does nothing even when
+        // pressed through AX. Not where cmd+w would close a tab instead: in a browser, or a
+        // window with tabs.
         let combo = combos.first?.lowercased().replacingOccurrences(of: "command", with: "cmd") ?? ""
-        if shortcut, !sheet, combos.count == 1, combo == "cmd+w", !hasTabs(win),
+        if !Input.onSheet(win), combos.count == 1, combo == "cmd+w", !hasTabs(win),
            let close = win.el.element(kAXCloseButtonAttribute), (close.attr(kAXEnabledAttribute) as? Bool) != false {
             return try acting(win) {
                 close.perform(kAXPressAction)
@@ -484,13 +497,58 @@ final class Commands {
             }
         }
         return try acting(win) {
-            let moved = try Input.toWindow(win, front: front || shortcut) { to in for c in combos { try Input.key(c, pid: to) } }
-            let how = front ? " with the window in front"
-                : shortcut ? " with the window brought forward (cmd shortcuts only work in the active app)"
-                : sheet ? " with the window brought forward (keys only reach its sheet from the front)"
-                : moved ? " with the window brought forward (in the background, keys would have gone to another window)" : ""
-            return "Pressed \(combos.joined(separator: " "))\(how)."
+            var done: [String] = []
+            for c in combos {
+                do { done.append(try pressBehind(c, win)) } catch let e as CubError where !done.isEmpty {
+                    throw CubError("Pressed \(done.joined(separator: ", ")), but not \(c). \(e.description)")
+                }
+            }
+            return "Pressed \(done.joined(separator: ", ")), with the window left in the background."
         }
+    }
+
+    // One key for a window in the background, by whichever route keeps it there. Throws,
+    // rather than bringing it forward, when none will: taking Mike's focus is the agent's
+    // call to make, with --front.
+    private func pressBehind(_ combo: String, _ win: Win) throws -> String {
+        let cmd = try Input.parse(combo).1.contains(.maskCommand)
+        let sheet = Input.onSheet(win)
+        let retry = "If it's worth taking \(userName)'s focus, run it again with --front."
+        // macOS only fires a shortcut in the active app, so press its menu item instead.
+        // Not while a sheet's up: the sheet's shortcuts (a file picker's cmd+shift+g) are
+        // its own, and the app's menu would act on the window under it.
+        if !sheet, try Input.menuItem(for: combo, pid: win.pid) != nil {
+            // Menu items act on the app's key window, so point it at ours first, and look
+            // again after: some items only light up once there's a window to act on.
+            if !Input.aimed(win) { Input.focus(win); usleep(50_000) }
+            guard Input.aimed(win) else {
+                throw CubError("Not sent: \(win.appName)'s menus would act on another of its windows while it's in the background. \(retry)")
+            }
+            if let (item, title, enabled) = try Input.menuItem(for: combo, pid: win.pid) {
+                guard enabled else {
+                    throw CubError("Not sent: \(combo) is \(win.appName)'s \"\(title)\", which is greyed out while it's in the background. A button in the window may do the same from there (snap shows them). \(retry)")
+                }
+                let mine = NSWorkspace.shared.frontmostApplication
+                item.perform(kAXPressAction)
+                // Some items bring their app forward themselves (Finder's Go to Folder), so
+                // hand Mike's app straight back. What they opened may only work in front.
+                usleep(300_000)
+                if let mine, mine.processIdentifier != win.pid, NSWorkspace.shared.frontmostApplication?.processIdentifier == win.pid {
+                    AXUIElementCreateApplication(mine.processIdentifier).set(kAXFrontmostAttribute, kCFBooleanTrue)
+                    mine.activate()
+                    return "\(combo) (\"\(title)\" from the menu; \(win.appName) came forward by itself for it and was sent back, and what it opened may only respond with --front)"
+                }
+                return "\(combo) (\"\(title)\" from the menu)"
+            }
+        }
+        if let how = Input.confirm(combo, in: win) { return "\(combo) (\(how))" }
+        if cmd {
+            let why = sheet ? "keys for its sheet only get there with the window in front (its buttons and fields work from the background, so click or type into those instead)"
+                : "\(win.appName) has no menu item for it, and shortcuts only work in the active app"
+            throw CubError("Not sent: \(why). \(retry)")
+        }
+        try Input.toWindow(win, front: false) { try Input.key(combo, pid: $0) }
+        return combo
     }
 
     private func hasTabs(_ win: Win) -> Bool {
@@ -564,7 +622,7 @@ final class Commands {
         return (trail.isEmpty ? "\(app.localizedName ?? appQuery) menus" : trail.joined(separator: " > ")) + "\n" + out.joined(separator: "\n")
     }
 
-    private func scroll(_ target: String, _ direction: String?) throws -> String {
+    private func scroll(_ target: String, _ direction: String?, front: Bool) throws -> String {
         let isRef = target.range(of: #"^e\d+$"#, options: .regularExpression) != nil
         let el: AXUIElement, win: Win
         if isRef {
@@ -606,7 +664,7 @@ final class Commands {
                 usleep(150_000)
                 return "Scrolled \(direction) a page\(whereNow())."
             }
-            try Input.toWindow(win, front: false) { try Input.key(direction == "up" ? "pageup" : "pagedown", pid: $0) }
+            try Input.toWindow(win, front: front) { try Input.key(direction == "up" ? "pageup" : "pagedown", pid: $0) }
             return "Pressed \(direction == "up" ? "Page Up" : "Page Down")."
         }
     }

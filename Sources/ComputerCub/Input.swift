@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ComputerCubCore
 
 // Keys and the mouse. Keys go straight to the app's process (CGEvent.postToPid), so they
 // land in that app even when Mike is typing somewhere else. The mouse can't do that: a
@@ -87,7 +88,8 @@ enum Input {
     // from the background usually works, but not when ours is minimised or the key window
     // sits on another Space: then cmd+w closed Mike's Downloads window instead. So check
     // where keys will land, bring the window forward if that's what it takes, and send
-    // nothing if they still wouldn't reach it. Returns whether it had to come forward.
+    // nothing if they still wouldn't reach it. Returns whether it came forward, which
+    // without `front` it only does when the app's already in front.
     //
     // body gets the pid to post keys to. A sheet is often an Open or Save panel run by a
     // separate process (openAndSavePanelService, for every sandboxed app, System Settings
@@ -109,6 +111,13 @@ enum Input {
         if !front && !sheet && aimed(win) {
             try body(win.pid)
             return false
+        }
+        // Coming forward takes Mike's focus mid-task, so it's only on the agent's say-so.
+        // Unless the app's in front anyway: then there's nothing of his to take.
+        if !front && NSWorkspace.shared.frontmostApplication?.processIdentifier != win.pid {
+            let why = sheet ? "keys for its sheet only get there with the window in front (its buttons and fields work from the background, so click or type into those instead)"
+                : "\(win.appName) sends its keys to another of its windows while it's in the background"
+            throw CubError("Not sent: \(why). If it's worth taking \(userName)'s focus, run it again with --front.")
         }
         try inFront(win) {
             // An app that's just come forward can take a moment to settle on a key window.
@@ -134,7 +143,7 @@ enum Input {
             }
             try body(nil)
         }
-        return !front
+        return true
     }
 
     // True when keys will land in the window or a sheet on it. While a sheet's up (a
@@ -153,6 +162,74 @@ enum Input {
 
     static func onSheet(_ win: Win) -> Bool {
         AXUIElementCreateApplication(win.pid).element(kAXFocusedWindowAttribute)?.string(kAXRoleAttribute) == kAXSheetRole
+    }
+
+    // The app's menu item for a shortcut, which can be pressed with the app in the
+    // background, unlike the shortcut itself. Skips the Apple menu: its items (Lock
+    // Screen, Force Quit) are the Mac's, not the app's.
+    static func menuItem(for combo: String, pid: pid_t) throws -> (item: AXUIElement, title: String, enabled: Bool)? {
+        let (code, flags) = try parse(combo)
+        let key = combo.hasSuffix("++") ? "=" : (combo.lowercased().split(separator: "+").last.map(String.init) ?? "")
+        guard let want = MenuShortcut(key: key, keyCode: Int(code), cmd: flags.contains(.maskCommand), shift: flags.contains(.maskShift),
+                                      option: flags.contains(.maskAlternate), control: flags.contains(.maskControl)),
+              let bar = AXUIElementCreateApplication(pid).element(kAXMenuBarAttribute) else { return nil }
+        var queue = Array(bar.elements(kAXChildrenAttribute).dropFirst()), seen = 0
+        while !queue.isEmpty, seen < 3000 {
+            let el = queue.removeFirst()
+            seen += 1
+            let v = el.values([kAXTitleAttribute, kAXEnabledAttribute, "AXMenuItemCmdChar", "AXMenuItemCmdModifiers", "AXMenuItemCmdVirtualKey", kAXChildrenAttribute])
+            if want.matches(char: v["AXMenuItemCmdChar"] as? String, modifiers: (v["AXMenuItemCmdModifiers"] as? NSNumber)?.intValue,
+                            virtualKey: (v["AXMenuItemCmdVirtualKey"] as? NSNumber)?.intValue) {
+                return (el, v[kAXTitleAttribute] as? String ?? combo, (v[kAXEnabledAttribute] as? Bool) != false)
+            }
+            queue += (v[kAXChildrenAttribute] as? [AXUIElement]) ?? []
+        }
+        return nil
+    }
+
+    // Return and Escape as the focused control's own Confirm and Cancel, or, on a sheet,
+    // its default and cancel buttons. Both work in the background, where the keys
+    // themselves can't reach a sheet. Nil when neither is there.
+    static func confirm(_ combo: String, in win: Win) -> String? {
+        let k = combo.lowercased()
+        let ok = k == "return" || k == "enter"
+        guard ok || k == "escape" || k == "esc" else { return nil }
+        let app = AXUIElementCreateApplication(win.pid)
+        if let el = app.element(kAXFocusedUIElementAttribute), belongs(el, to: win) {
+            let action = ok ? "AXConfirm" : "AXCancel"
+            if el.actions.contains(action), el.perform(action) == .success { return action }
+        }
+        // File pickers run in another process and leave AXCancelButton empty, so for
+        // Escape, look for the button by name. Return has nothing as safe to go on.
+        if onSheet(win), let sheet = app.element(kAXFocusedWindowAttribute),
+           let button = sheet.element(ok ? kAXDefaultButtonAttribute : kAXCancelButtonAttribute) ?? (ok ? nil : cancelButton(in: sheet)),
+           (button.attr(kAXEnabledAttribute) as? Bool) != false, button.perform(kAXPressAction) == .success {
+            return "the sheet's \(button.string(kAXTitleAttribute).map { "\"\($0)\"" } ?? (ok ? "default" : "cancel")) button"
+        }
+        return nil
+    }
+
+    private static func cancelButton(in sheet: AXUIElement) -> AXUIElement? {
+        var queue = sheet.elements(kAXChildrenAttribute), seen = 0
+        while !queue.isEmpty, seen < 400 {
+            let el = queue.removeFirst()
+            seen += 1
+            if el.string(kAXRoleAttribute) == kAXButtonRole, el.string(kAXTitleAttribute) == "Cancel" { return el }
+            queue += el.elements(kAXChildrenAttribute)
+        }
+        return nil
+    }
+
+    // Whether an element is in the window, or a sheet on it.
+    private static func belongs(_ el: AXUIElement, to win: Win) -> Bool {
+        var w = el.element(kAXWindowAttribute)
+        for _ in 0..<4 {
+            guard let k = w else { return false }
+            if CFEqual(k, win.el) { return true }
+            guard k.string(kAXRoleAttribute) == kAXSheetRole else { return false }
+            w = k.element(kAXParentAttribute)
+        }
+        return false
     }
 
     // Some keys only work in the active app (Chrome's cmd+w needs a key window, which an

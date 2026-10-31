@@ -18,10 +18,13 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    `computercub move <window> x y [w h]`, `computercub scroll <window> down` (says how far down it
    got). Each answers with what changed, so don't snap again after it. In a file picker,
    cmd+shift+g opens Go to Folder for hidden places like ~/Library.
-4. Cmd shortcuts bring the window forward by themselves, which takes Mike's focus, except
-   cmd+w on a window without tabs, which uses its close button and stays in the background.
-   If another key does nothing in a background app, retry with `--front`, which briefly
-   brings the window forward. Prefer a `click` on a button over a shortcut when there's one.
+4. Windows stay in the background, so Mike keeps his focus. `press` runs a cmd shortcut by
+   pressing its menu item, Return and Escape as the control's Confirm and Cancel (Escape on a
+   Save or Open sheet presses its Cancel button), and other keys go to the app directly.
+   When none of that can reach it (a greyed-out item, a file picker's own shortcuts), it
+   says "Not sent" rather than taking his focus. Then click a button for it if there is
+   one; add `--front` (on `press`, `type` or `scroll`) only when it's worth interrupting him.
+   Prefer a `click` on a button over a shortcut when there's one.
    When a plain `click` does nothing, `--mouse` sends a mouse click to the window itself:
    Mike's pointer doesn't move and the window stays in the background. `--pointer` uses
    his real pointer and brings the window forward, so it's the last resort, for when
@@ -32,7 +35,7 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 5. `computercub type` without flags only sets the field's value, which apps may not notice: a
    rename in Finder shows the new text and stays the old name. Use `--submit` to have it
    typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
-   field from the background, it brings the window up and clicks the field first.
+   field from the background, it says so; `--front` brings the window up and clicks it.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
 7. `computercub shot <window|ref>` only when you need to see it. It's that window only, plus
