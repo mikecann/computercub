@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ComputerCubCore
 
 struct Win {
     let el: AXUIElement
@@ -26,6 +27,8 @@ final class Desktop {
     private var reservedElements = 0, firstElement = 1
     private var webTurnedOn: Set<pid_t> = []
     var lastLines: [CGWindowID: [String]] = [:]
+    // How each window's last shot maps onto it, for clicks at a position in the picture.
+    var lastShots: [CGWindowID: ShotMap] = [:]
     // Who's running the current command, for the marker on the window it uses.
     var agent: String?
 

@@ -1,6 +1,6 @@
 ---
 name: computercub
-description: ComputerCub, computer use for your Mac. Drive Mac apps (Finder, System Settings, Xcode, Helium, native dialogs and file pickers) and the parts of Chrome extensions can't reach (Chrome Web Store pages, chrome:// pages, Chrome's own toolbar and tabs) with the `computercub` command, and see Mike's iPhone screen through iPhone Mirroring. Use when a job needs a native app, a page BrowserBear can't open, or a look at his phone before asking him to check it.
+description: ComputerCub, computer use for your Mac. Drive Mac apps (Finder, System Settings, Xcode, Helium, native dialogs and file pickers) and the parts of Chrome extensions can't reach (Chrome Web Store pages, chrome:// pages, Chrome's own toolbar and tabs) with the `computercub` command, and see and drive Mike's iPhone through iPhone Mirroring. Use when a job needs a native app, a page BrowserBear can't open, or something done or checked on his phone before asking him.
 ---
 
 # ComputerCub
@@ -38,7 +38,8 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    field from the background, it says so; `--front` brings the window up and clicks it.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
-7. `computercub shot <window|ref>` only when you need to see it. It's that window only, plus
+7. `computercub shot <window|ref>` only when you need to see it. For a window with no refs, `click`,
+   `swipe` and `type` take a window and positions from its last shot, as under iPhone Mirroring. It's that window only, plus
    any menu or popover it has open; run `computercub clean` when you're done with personal
    screenshots. `snap` lists open menus and popovers too, and says when a menu is on screen
    but can't be read yet, so no `[menu]` means no menu.
@@ -53,7 +54,14 @@ look yourself. He's had to remind agents that this exists.
 
 - `open -a "iPhone Mirroring"`, wait a few seconds, then `computercub shot "iPhone Mirroring"`.
   The window exposes nothing to Accessibility, so `snap` gives no refs and shots are how you read it.
-- You can't tap in it yet, as `click` needs a ref. Use `xcrun devicectl` to install and launch apps.
+- Drive it with positions from its last shot, in that picture's pixels: `computercub click "iPhone Mirroring" x y`,
+  `computercub swipe "iPhone Mirroring" x y x2 y2`, and `computercub type "iPhone Mirroring" "text" [--submit]` after
+  tapping the field. `computercub press "iPhone Mirroring" cmd+1` goes Home, `cmd+2` opens the app switcher, `cmd+3` Search.
+  All of it runs from the background, so Mike keeps his pointer, keyboard and front app. Don't use `--pointer`, `--front`
+  or your own click tool here: they take them from him, and he finds that really annoying.
+- Each one answers without saying what changed, so take a new shot after it. Look before tapping again, since a tap that
+  worked can take a moment to show, and repeating it lands on whatever's there now. The first gesture after it
+  connects can get eaten, and small buttons sometimes miss. Passwords and passcodes stay Mike's.
 - It only connects while the phone is locked. "iPhone in Use" means he has it in his hand, so
   don't wait on it. If it's stuck setting up, run `killall rapportd sharingd` (they relaunch) and reopen it.
 - It draws the Dynamic Island plain black, so the blue location arrow doesn't show.

@@ -53,6 +53,14 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub click <ref> [--double] [--mouse] [--pointer]
                                               --mouse sends a click to the window, pointer
                                               untouched; --pointer uses the real one
+  computercub click <window> <x> <y> [--double] [--pointer]
+                                              for windows with no refs: a spot in the window's
+                                              last shot, in that picture's pixels
+  computercub swipe <window> <x> <y> <x2> <y2> [--pointer]
+                                              press, drag and let go, same pixels
+  computercub type <window> <text> [--submit] [--front]
+                                              for windows with no refs: keys for whatever's
+                                              focused, so click the field first
   computercub type <ref> <text> [--submit] [--keys] [--front]
                                               replaces the field's text; passwords are refused.
                                               Alone it just sets the value; --submit and --keys
@@ -148,8 +156,16 @@ final class Commands {
             if let text = a.flags["find"] { return try find(try a.at(0, "a window"), text) }
             return try snap(try a.at(0, "a window"), full: a.has("full"), all: a.has("all"))
         case "read": return try read(try a.at(0, "a window or ref"))
-        case "click": return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"), pointer: a.has("pointer"))
-        case "type": return try type(try a.at(0, "a ref"), try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"), front: a.has("front"))
+        case "click":
+            if a.pos.count > 1 { return try click(try a.at(0, "a window"), Array(a.pos.dropFirst()), double: a.has("double"), pointer: a.has("pointer")) }
+            return try click(try a.at(0, "a ref"), mouse: a.has("mouse"), double: a.has("double"), pointer: a.has("pointer"))
+        case "swipe": return try swipe(try a.at(0, "a window"), Array(a.pos.dropFirst()), pointer: a.has("pointer"))
+        case "type":
+            let target = try a.at(0, "a ref or window")
+            if target.range(of: #"^e\d+$"#, options: .regularExpression) == nil {
+                return try type(window: target, try a.at(1, "the text"), submit: a.has("submit"), front: a.has("front"))
+            }
+            return try type(target, try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"), front: a.has("front"))
         case "press": return try press(try a.at(0, "a window or ref"), Array(a.pos.dropFirst()), front: a.has("front"))
         case "menu": return try menu(try a.at(0, "an app"), a.pos.count > 1 ? a.pos[1] : nil)
         case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil, front: a.has("front"))
@@ -314,7 +330,13 @@ final class Commands {
             }
             let d = Snapshot.diff(desk.lastLines[win.id], lines)
             desk.lastLines[win.id] = lines
-            out.append(desk.header(win) + (d.full ? "" : " (changes)") + "\n" + d.text)
+            // "(no change)" would read as the action having missed in a window like iPhone
+            // Mirroring, which can't say what changed.
+            if lines.isEmpty {
+                out.append("This window shows nothing to Accessibility, so a new `computercub shot \(desk.ref(for: win))` is the way to see what it did.")
+            } else {
+                out.append(desk.header(win) + (d.full ? "" : " (changes)") + "\n" + d.text)
+            }
         } else {
             out.append("\(desk.ref(for: win)) closed.")
         }
@@ -385,6 +407,66 @@ final class Commands {
         }
     }
 
+    // For windows with nothing in Accessibility, where a position in a shot is all there is
+    // to aim at. A plain AX press can't exist here, so it's --mouse's route by default.
+    private func click(_ target: String, _ numbers: [String], double: Bool, pointer: Bool) throws -> String {
+        let win = try desk.window(target)
+        let v = numbers.compactMap(Double.init)
+        guard v.count == 2, numbers.count == 2 else {
+            throw CubError("Give x and y from the window's last shot: `computercub click \(target) 120 340`.")
+        }
+        let p = try shotPoint(win, target, x: v[0], y: v[1])
+        let at = "\(fmt(v[0])),\(fmt(v[1]))", done = double ? "Double-clicked" : "Clicked"
+        return try acting(win) {
+            if pointer {
+                try Input.click(at: p, in: win, double: double)
+                return "\(done) \(at) with \(userName)'s pointer."
+            }
+            Input.focusBehind(win)
+            Input.post(clickAt: p, in: win, double: double, hold: Input.positionHold)
+            return "\(done) \(at) with a click sent to the window, so the pointer didn't move. If a shot shows it didn't land, --pointer uses the real one, which takes \(userName)'s pointer."
+        }
+    }
+
+    private func swipe(_ target: String, _ numbers: [String], pointer: Bool) throws -> String {
+        let win = try desk.window(target)
+        let v = numbers.compactMap(Double.init)
+        guard v.count == 4, numbers.count == 4 else {
+            throw CubError("Give where to start and end, from the window's last shot: `computercub swipe \(target) 300 900 300 300`.")
+        }
+        let a = try shotPoint(win, target, x: v[0], y: v[1]), b = try shotPoint(win, target, x: v[2], y: v[3])
+        let path = "\(fmt(v[0])),\(fmt(v[1])) to \(fmt(v[2])),\(fmt(v[3]))"
+        return try acting(win) {
+            if pointer {
+                try Input.swipe(from: a, to: b, in: win)
+                return "Swiped \(path) with \(userName)'s pointer."
+            }
+            Input.focusBehind(win)
+            Input.post(swipeFrom: a, to: b, in: win)
+            return "Swiped \(path) with events sent to the window, so the pointer didn't move. If a shot shows it didn't land, --pointer uses the real one, which takes \(userName)'s pointer."
+        }
+    }
+
+    // A position in the window's last shot, as a point in the window. Refuses rather than
+    // guesses: a click somewhere other than where the agent looked can do real damage.
+    private func shotPoint(_ win: Win, _ target: String, x: Double, y: Double) throws -> CGPoint {
+        guard let map = desk.lastShots[win.id] else {
+            throw CubError("Positions come from the window's last shot, and there isn't one. Run `computercub shot \(target)` first.")
+        }
+        if (win.el.attr(kAXMinimizedAttribute) as? Bool) == true { throw CubError("That window is minimised.") }
+        guard let now = win.el.frame, !map.stale(windowSize: now.size) else {
+            throw CubError("The window has changed size since its last shot, so that spot has moved. Run `computercub shot \(target)` again.")
+        }
+        guard map.inPicture(x: x, y: y) else {
+            throw CubError("\(fmt(x)),\(fmt(y)) is outside the last shot, which is \(Int(map.size.width))×\(Int(map.size.height)).")
+        }
+        let p = map.point(x: x, y: y)
+        guard map.inWindow(p) else { throw CubError("\(fmt(x)),\(fmt(y)) is over a menu or popover, not the window. Use `computercub snap \(target)` and click its ref.") }
+        return p
+    }
+
+    private func fmt(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+
     // The element itself, its cells (a row), or the cell around it (a row's text).
     private func openable(_ el: AXUIElement) -> AXUIElement? {
         if el.actions.contains("AXOpen") { return el }
@@ -411,6 +493,21 @@ final class Commands {
             }
             let forward = try typeKeys(text, into: el, ref: ref, win: win, submit: submit, front: front)
             return "Typed into \(ref) with keys\(forward ? " with the window brought forward" : "")\(submit ? " and pressed Return" : "")."
+        }
+    }
+
+    // For windows with no refs: keys go to whatever the window has focused, so tap the field
+    // first. Nothing can read the text back, so it can't refuse a password field or say the
+    // keys landed the way the ref version does.
+    private func type(window target: String, _ text: String, submit: Bool, front: Bool) throws -> String {
+        let win = try desk.window(target)
+        return try acting(win) {
+            if !front { Input.focusBehind(win) }
+            let moved = try Input.toWindow(win, front: front) { to in
+                try Input.type(text, pid: to)
+                if submit { try Input.key("return", pid: to) }
+            }
+            return "Sent the keys to the window\(moved ? " in front" : "")\(submit ? " and pressed Return" : "")."
         }
     }
 
@@ -765,12 +862,15 @@ final class Commands {
     }
 
     private func shot(_ target: String, max: Int) throws -> String {
+        let el: AXUIElement?, win: Win
         if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
-            let (el, win) = try desk.lookup(target)
-            return try Shot.capture(win, crop: el.frame, maxSide: max, overlays: desk.overlays(of: win))
+            (el, win) = try { let (e, w) = try desk.lookup(target); return (e, w) }()
+        } else {
+            (el, win) = (nil, try desk.window(target))
         }
-        let win = try desk.window(target)
-        return try Shot.capture(win, crop: nil, maxSide: max, overlays: desk.overlays(of: win))
+        let taken = try Shot.capture(win, crop: el?.frame, maxSide: max, overlays: desk.overlays(of: win))
+        desk.lastShots[win.id] = taken.map
+        return taken.line
     }
 
     private func handoff(_ a: Args, agent: String?) throws -> String {

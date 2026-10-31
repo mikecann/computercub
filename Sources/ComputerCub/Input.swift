@@ -459,30 +459,89 @@ enum Input {
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
             throw CubError("Something else is at that spot (\(what.isEmpty ? "another element" : what)), so a click would land there. Not clicking.")
         }
-        let id = Int64(win.id), local = CGPoint(x: p.x - w.minX, y: p.y - w.minY)
+        focusBehind(win)
+        post(clickAt: CGPoint(x: p.x - w.minX, y: p.y - w.minY), in: win, double: double)
+    }
+
+    // The same click at a point in the window, for windows with nothing to aim at (iPhone
+    // Mirroring draws its whole window itself).
+    static func post(clickAt local: CGPoint, in win: Win, double: Bool, hold: useconds_t = 10_000) {
+        guard let w = win.el.frame else { return }
         let src = CGEventSource(stateID: .privateState)
-        func send(_ type: CGEventType, _ n: Int64) {
-            guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
-            e.setIntegerValueField(.mouseEventClickState, value: n)
-            e.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: id)
-            e.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: id)
-            e.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(win.pid))
-            e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
-            e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
-            e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseDown ? 1 : 0)
-            setWindowLocation?(e, local)
-            // SkyLight's own post reaches text views (TextEdit) that CGEvent.postToPid's doesn't.
-            if let skyPost { skyPost(win.pid, e) } else { e.postToPid(win.pid) }
-        }
-        send(.mouseMoved, 0)
+        send(.mouseMoved, at: local, in: win, frame: w, n: 0, src)
         usleep(15_000)
         for n in 1...(double ? 2 : 1) {
-            send(.leftMouseDown, Int64(n))
-            usleep(10_000)
-            send(.leftMouseUp, Int64(n))
+            send(.leftMouseDown, at: local, in: win, frame: w, n: Int64(n), src)
+            usleep(hold)
+            send(.leftMouseUp, at: local, in: win, frame: w, n: Int64(n), src)
             usleep(30_000)
         }
     }
+
+    // A press, a drag in small steps and a release, all sent to the window like a click.
+    static func post(swipeFrom a: CGPoint, to b: CGPoint, in win: Win) {
+        guard let w = win.el.frame else { return }
+        let src = CGEventSource(stateID: .privateState)
+        send(.mouseMoved, at: a, in: win, frame: w, n: 0, src)
+        usleep(15_000)
+        send(.leftMouseDown, at: a, in: win, frame: w, n: 1, src)
+        usleep(60_000)
+        for p in swipeSteps(from: a, to: b) {
+            send(.leftMouseDragged, at: p, in: win, frame: w, n: 1, src)
+            usleep(12_000)
+        }
+        usleep(40_000)
+        send(.leftMouseUp, at: b, in: win, frame: w, n: 1, src)
+    }
+
+    // Quick enough to read as a swipe rather than a slow drag, in steps small enough that
+    // it doesn't look like a jump.
+    private static func swipeSteps(from a: CGPoint, to b: CGPoint) -> [CGPoint] {
+        let steps = 20
+        return (1...steps).map { i in
+            let t = CGFloat(i) / CGFloat(steps)
+            return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+        }
+    }
+
+    private static func send(_ type: CGEventType, at local: CGPoint, in win: Win, frame w: CGRect, n: Int64, _ src: CGEventSource?) {
+        let id = Int64(win.id), p = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
+        guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+        e.setIntegerValueField(.mouseEventClickState, value: n)
+        e.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: id)
+        e.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: id)
+        e.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(win.pid))
+        e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
+        e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
+        e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseUp || type == .mouseMoved ? 0 : 1)
+        setWindowLocation?(e, local)
+        // SkyLight's own post reaches text views (TextEdit) that CGEvent.postToPid's doesn't.
+        if let skyPost { skyPost(win.pid, e) } else { e.postToPid(win.pid) }
+    }
+
+    // Tells an app its window is focused without making it the front app, so Mike keeps his
+    // pointer, keyboard and front window. iPhone Mirroring's own buttons take a posted click
+    // without this, but it only passes clicks on to the phone while it thinks it has focus.
+    // The window server's own record, as yabai sends to focus without raising.
+    static func focusBehind(_ win: Win) {
+        var psn = ProcessSerialNumber()
+        guard let postRecord, let processSerial, processSerial(win.pid, &psn) == 0 else { return }
+        var record = [UInt8](repeating: 0, count: 0xf8)
+        record[0x04] = 0xf8
+        record[0x08] = 0x0d
+        record[0x8a] = 0x01
+        withUnsafeBytes(of: UInt32(win.id)) { record.replaceSubrange(0x3c..<0x40, with: $0) }
+        _ = postRecord(&psn, record)
+        usleep(60_000)
+    }
+
+    private typealias PostRecord = @convention(c) (UnsafePointer<ProcessSerialNumber>, UnsafePointer<UInt8>) -> Int32
+    private typealias ProcessSerial = @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> Int32
+    private static let postRecord = dlsym(dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW), "SLPSPostEventRecordTo")
+        .map { unsafeBitCast($0, to: PostRecord.self) }
+    // Gone from Swift's headers, though not from the system.
+    private static let processSerial = dlsym(dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_NOW), "GetProcessForPID")
+        .map { unsafeBitCast($0, to: ProcessSerial.self) }
 
     private typealias SetWindowLocation = @convention(c) (CGEvent, CGPoint) -> Void
     private typealias PostToPid = @convention(c) (pid_t, CGEvent) -> Void
@@ -517,6 +576,39 @@ enum Input {
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
             throw CubError("Something else is at that spot (\(what.isEmpty ? "another element" : what)), so a click would land there. Not clicking.")
         }
+        realClick(at: p, double: double)
+    }
+
+    // Takes Mike's pointer, so it's the last resort: comes forward just for this, checks
+    // nothing else is over the spot, and hands his app back.
+    static func click(at local: CGPoint, in win: Win, double: Bool) throws {
+        try inFront(win) {
+            let p = try onScreen(local, in: win)
+            realClick(at: p, double: double, hold: positionHold)
+        }
+    }
+
+    // How long a click at a position stays pressed. iPhone Mirroring passes it on to the phone
+    // as a touch, and a shorter press can go unnoticed.
+    static let positionHold: useconds_t = 150_000
+
+    static func swipe(from a: CGPoint, to b: CGPoint, in win: Win) throws {
+        try inFront(win) {
+            drag(from: try onScreen(a, in: win), to: try onScreen(b, in: win))
+        }
+    }
+
+    private static func onScreen(_ local: CGPoint, in win: Win) throws -> CGPoint {
+        guard let w = win.el.frame else { throw CubError("Can't tell where that window is on screen.") }
+        let p = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
+        if let other = owner(at: p), other != win.pid {
+            let name = NSRunningApplication(processIdentifier: other)?.localizedName ?? "another app"
+            throw CubError("\(name) is on top of that spot, so it would land there. Not doing it.")
+        }
+        return p
+    }
+
+    private static func realClick(at p: CGPoint, double: Bool, hold: useconds_t = 20_000) {
         let saved = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
         usleep(40_000)
@@ -525,7 +617,7 @@ enum Input {
                 guard let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { continue }
                 e.setIntegerValueField(.mouseEventClickState, value: Int64(n))
                 e.post(tap: .cghidEventTap)
-                usleep(20_000)
+                usleep(type == .leftMouseDown ? hold : 20_000)
             }
         }
         // Put the pointer back where Mike left it.

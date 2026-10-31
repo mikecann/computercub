@@ -1,4 +1,5 @@
 import AppKit
+import ComputerCubCore
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
@@ -20,7 +21,8 @@ enum Paths {
 enum Shot {
     // overlays: the window's open menus and popovers (Desktop.overlays), which are windows
     // of their own and so would be left out of a single-window capture.
-    static func capture(_ win: Win, crop: CGRect?, maxSide: Int, overlays: [(id: CGWindowID, frame: CGRect, layer: Int)] = []) throws -> String {
+    // Also returns how the picture maps onto the window, for `click <window> x y`.
+    static func capture(_ win: Win, crop: CGRect?, maxSide: Int, overlays: [(id: CGWindowID, frame: CGRect, layer: Int)] = []) throws -> (line: String, map: ShotMap?) {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
             throw CubError("ComputerCub needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub. Everything else works without it.", restart: true)
@@ -80,11 +82,20 @@ enum Shot {
         if let e = box.error { throw e }
         guard var image = box.image else { throw CubError("The screenshot came back empty.") }
 
-        if let crop, let wf = win.el.frame, wf.width > 0 {
-            let s = CGFloat(image.width) / (overlays.isEmpty ? wf.width : area.width)
+        // The window's frame now, in case the capture took a moment. Its size is what a
+        // later click checks against.
+        let wf = win.el.frame ?? .null
+        let s = wf.width > 0 ? CGFloat(image.width) / (overlays.isEmpty ? wf.width : area.width) : 0
+        var corner = origin
+        if let crop, s > 0 {
             let r = CGRect(x: (crop.minX - origin.x) * s, y: (crop.minY - origin.y) * s, width: crop.width * s, height: crop.height * s).integral
-            if let c = image.cropping(to: r) { image = c }
+            if let c = image.cropping(to: r) {
+                image = c
+                corner = CGPoint(x: origin.x + r.minX / s, y: origin.y + r.minY / s)
+            }
         }
+        let map = s > 0 ? ShotMap(origin: CGPoint(x: corner.x - wf.minX, y: corner.y - wf.minY), scale: s,
+                                  size: CGSize(width: image.width, height: image.height), windowSize: wf.size) : nil
 
         sweep()
         try FileManager.default.createDirectory(at: Paths.shots, withIntermediateDirectories: true)
@@ -95,7 +106,7 @@ enum Shot {
         CGImageDestinationAddImage(dest, image, nil)
         guard CGImageDestinationFinalize(dest) else { throw CubError("Couldn't write \(url.path).") }
         let open = overlays.contains { $0.layer >= 101 } ? "an open menu" : "what's open over it"
-        return "\(url.path) (\(image.width)×\(image.height))" + (overlays.isEmpty ? "" : ", with \(open)")
+        return ("\(url.path) (\(image.width)×\(image.height))" + (overlays.isEmpty ? "" : ", with \(open)"), map)
     }
 
     // Screenshots and long reads can hold anything that was on screen, so they don't
