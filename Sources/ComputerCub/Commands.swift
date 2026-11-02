@@ -57,7 +57,8 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               for windows with no refs: a spot in the window's
                                               last shot, in that picture's pixels
   computercub swipe <window> <x> <y> <x2> <y2> [--pointer]
-                                              press, drag and let go, same pixels
+                                              press, drag and let go, same pixels. Pages a phone's
+                                              home screen; lists need scroll
   computercub type <window> <text> [--submit] [--front]
                                               for windows with no refs: keys for whatever's
                                               focused, so click the field first
@@ -72,7 +73,9 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               press their menu item. Where keys can't reach it,
                                               it says so; --front brings it forward
   computercub menu <app> [File > New Window]  list an app's menus, or pick an item
-  computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area
+  computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area.
+                                              In a window with no refs (a phone), a wheel
+                                              scroll that borrows the real pointer for a moment
   computercub drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
   computercub move <window> <x> <y> [w h]     move (and resize) a window, in points from the
                                               main display's top-left corner
@@ -443,7 +446,9 @@ final class Commands {
             }
             Input.focusBehind(win)
             Input.post(swipeFrom: a, to: b, in: win)
-            return "Swiped \(path) with events sent to the window, so the pointer didn't move. If a shot shows it didn't land, --pointer uses the real one, which takes \(userName)'s pointer."
+            // On the phone a drag doesn't scroll a list, which agents kept trying.
+            let list = abs(v[3] - v[1]) > abs(v[2] - v[0]) ? " To scroll a list on a phone, use `computercub scroll \(target) down` instead: a drag doesn't." : ""
+            return "Swiped \(path) with events sent to the window, so the pointer didn't move.\(list)"
         }
     }
 
@@ -737,7 +742,18 @@ final class Commands {
             }
         }
         guard direction == "up" || direction == "down" else { throw CubError("Scroll up or down.") }
-        guard let area = scrollArea(around: el) else { throw CubError("Nothing scrolls there.") }
+        guard let area = scrollArea(around: el) else {
+            // Nothing in Accessibility to scroll, as under iPhone Mirroring: a wheel scroll
+            // over the middle of the window, which the mirror hands the phone. It only
+            // takes one with the real pointer over the window, so this borrows it.
+            guard !isRef, Snapshot.lines(win, desk).isEmpty, let f = win.el.frame else { throw CubError("Nothing scrolls there.") }
+            return try acting(win, settle: false) {
+                // About half the window per scroll, so what was at the edge stays in view.
+                let lines = Int32((f.height / 2 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
+                try Input.scroll(at: CGPoint(x: f.width / 2, y: f.height / 2), lines: lines, in: win)
+                return "Scrolled \(direction) about half the window with a wheel scroll, which borrowed \(userName)'s pointer for a moment."
+            }
+        }
         let bar = area.element(kAXVerticalScrollBarAttribute)
         // Where it got to, so an agent can tell when to stop.
         func whereNow() -> String {

@@ -479,6 +479,10 @@ enum Input {
     }
 
     // A press, a drag in small steps and a release, all sent to the window like a click.
+    // iPhone Mirroring needs the press held a moment before the drag: without the pause
+    // the drag was dropped and the phone saw only a tap. Started on a home-screen icon,
+    // a drag picks the icon up and the home screen goes into editing, so agents are told
+    // to start on an empty spot.
     static func post(swipeFrom a: CGPoint, to b: CGPoint, in win: Win) {
         guard let w = win.el.frame else { return }
         let src = CGEventSource(stateID: .privateState)
@@ -486,8 +490,10 @@ enum Input {
         usleep(15_000)
         send(.leftMouseDown, at: a, in: win, frame: w, n: 1, src)
         usleep(60_000)
+        var last = a
         for p in swipeSteps(from: a, to: b) {
-            send(.leftMouseDragged, at: p, in: win, frame: w, n: 1, src)
+            send(.leftMouseDragged, at: p, in: win, frame: w, n: 1, src, delta: CGPoint(x: p.x - last.x, y: p.y - last.y))
+            last = p
             usleep(12_000)
         }
         usleep(40_000)
@@ -504,16 +510,21 @@ enum Input {
         }
     }
 
-    private static func send(_ type: CGEventType, at local: CGPoint, in win: Win, frame w: CGRect, n: Int64, _ src: CGEventSource?) {
-        let id = Int64(win.id), p = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
+    private static func send(_ type: CGEventType, at local: CGPoint, in win: Win, frame w: CGRect, n: Int64, _ src: CGEventSource?, delta: CGPoint = .zero) {
+        let p = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
         guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
         e.setIntegerValueField(.mouseEventClickState, value: n)
+        e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
+        e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseUp || type == .mouseMoved ? 0 : 1)
+        // A real drag says how far it moved since the last event; posted ones say nothing
+        // unless told.
+        e.setDoubleValueField(.mouseEventDeltaX, value: delta.x)
+        e.setDoubleValueField(.mouseEventDeltaY, value: delta.y)
+        let id = Int64(win.id)
         e.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: id)
         e.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: id)
         e.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(win.pid))
         e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
-        e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
-        e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseUp || type == .mouseMoved ? 0 : 1)
         setWindowLocation?(e, local)
         // SkyLight's own post reaches text views (TextEdit) that CGEvent.postToPid's doesn't.
         if let skyPost { skyPost(win.pid, e) } else { e.postToPid(win.pid) }
@@ -595,6 +606,44 @@ enum Input {
     static func swipe(from a: CGPoint, to b: CGPoint, in win: Win) throws {
         try inFront(win) {
             drag(from: try onScreen(a, in: win), to: try onScreen(b, in: win))
+        }
+    }
+
+    // How far one wheel line moves the phone, measured in its mirror window.
+    static let pointsPerLine: CGFloat = 9
+
+    // A mouse-wheel scroll over a point in the window, with the real pointer. For iPhone
+    // Mirroring, where a drag doesn't scroll a list (iOS treats a pointer drag as a
+    // drag, as on an iPad) and the mirror ignores wheel events unless the pointer is
+    // really over its window: posted ones, and real ones with the window behind
+    // another, did nothing, as did Page Down and the arrow keys. Negative lines scroll
+    // down. The window comes forward and the pointer goes back where it was.
+    static func scroll(at local: CGPoint, lines: Int32, in win: Win) throws {
+        try inFront(win) {
+            let p = try onScreen(local, in: win)
+            let saved = CGEvent(source: nil)?.location
+            // Two moves, a moment apart: with just one, and the wheel straight after, the
+            // mirror sometimes hadn't noticed the pointer arrive and dropped the scroll.
+            for q in [CGPoint(x: p.x + 1, y: p.y), p] {
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: q, mouseButton: .left)?.post(tap: .cghidEventTap)
+                usleep(150_000)
+            }
+            // In bursts of a few lines, as a wheel sends them, not one big jump.
+            var left = lines
+            while left != 0 {
+                let n = left > 0 ? min(left, 5) : max(left, -5)
+                let e = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: n, wheel2: 0, wheel3: 0)
+                e?.location = p
+                e?.post(tap: .cghidEventTap)
+                left -= n
+                usleep(30_000)
+            }
+            usleep(300_000)
+            // Back where Mike left it, unless he's moved it himself meanwhile. A real move
+            // rather than a warp, which sends no events, so the mirror sees the pointer leave.
+            if let saved, let now = CGEvent(source: nil)?.location, hypot(now.x - p.x, now.y - p.y) < 2 {
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: saved, mouseButton: .left)?.post(tap: .cghidEventTap)
+            }
         }
     }
 
