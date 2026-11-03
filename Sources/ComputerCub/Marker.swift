@@ -225,7 +225,11 @@ private final class BearView: NSView {
 enum Agent {
     private static let known = [("claude", "Claude"), ("codex", "Codex"), ("grok", "Grok"), ("muse", "Muse"), ("cursor", "Cursor")]
 
-    static func current() -> String? {
+    static func current() -> String? { caller()?.name }
+
+    // The agent's own process as well as its name: each agent session (a Threadbear thread,
+    // a terminal) is its own process, so its pid tells two sessions of the same agent apart.
+    static func caller() -> (name: String, pid: pid_t)? {
         var pid = getppid()
         for _ in 0..<16 where pid > 1 {
             var buf = [CChar](repeating: 0, count: 4096)
@@ -234,7 +238,7 @@ enum Agent {
                 // ~/.local/share/claude/versions/2.1.314, so the folders count too.
                 for part in String(cString: buf).split(separator: "/").reversed() {
                     let name = part.lowercased()
-                    if let hit = known.first(where: { name.hasPrefix($0.0) }) { return hit.1 }
+                    if let hit = known.first(where: { name.hasPrefix($0.0) }) { return (hit.1, pid) }
                 }
             }
             var info = kinfo_proc()

@@ -102,7 +102,7 @@ final class Commands {
     let desk = Desktop.shared
     private let work = DispatchQueue(label: "computercub.work")
 
-    func run(_ argv: [String], agent: String? = nil) -> Reply {
+    func run(_ argv: [String], agent: String? = nil, session: pid_t? = nil) -> Reply {
         guard let cmd = argv.first else { return Reply(ok: true, out: helpText) }
         let a = Args(Array(argv.dropFirst()))
         do {
@@ -125,6 +125,7 @@ final class Commands {
             default:
                 return Reply(ok: true, out: try work.sync {
                     desk.agent = agent
+                    desk.session = session
                     return try dispatch(cmd, a)
                 })
             }
@@ -320,6 +321,7 @@ final class Commands {
         let before = Set(desk.windows(of: win.app).map(\.id))
         if desk.lastLines[win.id] == nil { desk.lastLines[win.id] = Snapshot.lines(win, desk) }
         let earlier = sheetElsewhere(win)
+        let shared = desk.sharedWith(win)
         var out = [try body()]
         usleep(250_000)
         if win.el.isAlive {
@@ -356,6 +358,7 @@ final class Commands {
             desk.lastLines[now.host.id] = lines
             out.append("A sheet opened on another window: \(desk.header(now.host))\n\(d.text)")
         }
+        if let shared { out.append(shared) }
         return out.joined(separator: "\n")
     }
 
@@ -508,6 +511,7 @@ final class Commands {
         let win = try desk.window(target)
         return try acting(win) {
             if !front { Input.focusBehind(win) }
+            if win.isMirroring { Input.wakeKeys(win) }
             if win.isMirroring && Self.pastes(text) {
                 try pasteOnPhone(text, win: win)
                 if submit { try Input.key("return", pid: win.pid, modifierKeys: true) }
@@ -655,6 +659,7 @@ final class Commands {
         // greys out in the background, so cmd+a goes as keys rather than "Not sent".
         if win.isMirroring, (try Input.menuItem(for: combo, pid: win.pid))?.2 != true {
             Input.focusBehind(win)
+            Input.wakeKeys(win)
             try Input.key(combo, pid: win.pid, modifierKeys: true)
             return combo
         }
@@ -949,9 +954,10 @@ final class Commands {
         } else {
             (el, win) = (nil, try desk.window(target))
         }
+        let shared = desk.sharedWith(win)
         let taken = try Shot.capture(win, crop: el?.frame, maxSide: max, overlays: desk.overlays(of: win))
         desk.lastShots[win.id] = taken.map
-        return taken.line
+        return [taken.line, shared].compactMap { $0 }.joined(separator: "\n")
     }
 
     private func handoff(_ a: Args, agent: String?) throws -> String {

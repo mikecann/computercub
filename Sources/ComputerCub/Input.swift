@@ -625,6 +625,21 @@ enum Input {
         if let skyPost { skyPost(win.pid, e) } else { e.postToPid(win.pid) }
     }
 
+    // iPhone Mirroring doesn't pass keys on to the phone until it's had a click since it
+    // opened: cmd+3 then typing "Pebble" left Search empty, and the same keys landed once
+    // anything had been tapped. A click on the strip above the phone (the window's hidden
+    // title bar, which the phone never sees) wakes it up without touching anything on the
+    // phone, so keys for the mirror always go after one.
+    static func wakeKeys(_ win: Win) {
+        guard let w = win.el.frame else { return }
+        let src = CGEventSource(stateID: .privateState)
+        let top = CGPoint(x: w.width / 2, y: 8)
+        send(.leftMouseDown, at: top, in: win, frame: w, n: 1, src)
+        usleep(40_000)
+        send(.leftMouseUp, at: top, in: win, frame: w, n: 1, src)
+        usleep(60_000)
+    }
+
     // Tells an app its window is focused without making it the front app, so Mike keeps his
     // pointer, keyboard and front window. iPhone Mirroring's own buttons take a posted click
     // without this, but it only passes clicks on to the phone while it thinks it has focus.

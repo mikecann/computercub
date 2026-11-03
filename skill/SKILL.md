@@ -62,7 +62,9 @@ look yourself. He's had to remind agents that this exists.
 - `type` sends short text as real keys, as a keyboard plugged into the phone would. Long text (over 60 characters),
   anything with a line break, and characters that aren't on a US keyboard go in as a paste instead, in one call, with
   Mike's clipboard put back after. So send a whole multi-line message in one `type`, not a call per line. `press`
-  works on the phone too: `cmd+a` then `delete` clears a field. If keys don't show up, tap the field and try again.
+  works on the phone too: `cmd+a` then `delete` clears a field.
+- Only one agent at a time on the phone. If an answer says "Heads up: another … session used this window", another
+  thread is driving it (or relaunching apps on it), and taps will land on its screens, not yours. Stop and tell Mike.
 - `swipe` is a finger drag: it pages the home screen and works sideways swipes and sliders, but a drag doesn't scroll
   a list on the phone (iOS treats a pointer drag as a drag, as on an iPad). For lists use
   `computercub scroll "iPhone Mirroring" down` (or `up`), about 40% of a screen each, from the background in about

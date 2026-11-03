@@ -33,6 +33,23 @@ final class Desktop {
     var lastShots: [CGWindowID: ShotMap] = [:]
     // Who's running the current command, for the marker on the window it uses.
     var agent: String?
+    // Which agent session that is (its process), and who last used each window.
+    var session: pid_t?
+    private var lastUser: [CGWindowID: (session: pid_t, agent: String?, at: Date)] = [:]
+
+    // Two agents in one window undo each other's work without either seeing why: on 3 Nov
+    // one thread's taps on Mike's phone kept landing in Walkies, because another thread's
+    // script was relaunching Walkies on the phone every 20 seconds. So say when another
+    // session has used this window lately.
+    func sharedWith(_ win: Win) -> String? {
+        guard let session else { return nil }
+        defer { lastUser[win.id] = (session, agent, Date()) }
+        guard let last = lastUser[win.id], last.session != session else { return nil }
+        let ago = Int(Date().timeIntervalSince(last.at))
+        guard ago < 180 else { return nil }
+        return "Heads up: another \(last.agent ?? "agent") session (pid \(last.session)) used this window \(ago) s ago. "
+            + "It may be changing things under you, so what you see or tap can be its doing. Don't fight it: check with \(userName) or wait until it's done."
+    }
 
     // The service gets restarted under agents' feet (a reinstall pkills it), and a fresh
     // count would hand the same window a new ref: w5, then w3, then w1. CGWindowIDs outlive

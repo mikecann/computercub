@@ -63,7 +63,7 @@ enum Service {
         guard let line = Wire.readLine(c),
               let req = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let args = req["args"] as? [String] else { return }
-        let reply = Commands.shared.run(args, agent: req["agent"] as? String)
+        let reply = Commands.shared.run(args, agent: req["agent"] as? String, session: (req["session"] as? NSNumber)?.int32Value)
         Wire.send(c, ["ok": reply.ok, "out": reply.out, "restart": reply.restart])
     }
 }
@@ -79,7 +79,8 @@ enum Client {
         // `serve` with its own COMPUTERCUB_HOME is listening: then refs last between commands.
         guard let app = appBundle(), !args.contains("--local") else {
             if Paths.isDev, !args.contains("--local"), let reply = call(args, app: nil) { return finish(reply) }
-            return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: Agent.current()))
+            let me = Agent.caller()
+            return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: me?.name, session: me?.pid))
         }
         guard var reply = call(args, app: app) else { return 1 }
         // Granting Screen Recording while the app is running doesn't reach it until it
@@ -117,7 +118,7 @@ enum Client {
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         var req: [String: Any] = ["args": args, "cwd": FileManager.default.currentDirectoryPath]
-        if let agent = Agent.current() { req["agent"] = agent }
+        if let me = Agent.caller() { req["agent"] = me.name; req["session"] = Int(me.pid) }
         Wire.send(fd, req)
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
