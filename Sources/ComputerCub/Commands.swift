@@ -155,6 +155,13 @@ final class Commands {
         // Without this they'd all report the windows as closed, and keys meant for a window
         // could end up on the lock screen. apps and menu don't need windows.
         if !["apps", "menu"].contains(cmd), screenLocked { throw CubError(ScreenLock.refusal(user: userName)) }
+        // On the phone, --pointer and --front take Mike's mouse and keyboard while iPhone
+        // Mirroring comes forward, and agents reached for them after one missed tap and kept
+        // going for ten minutes while he was typing. So the mirror refuses them while he's at
+        // the Mac; the plain commands all work from the background.
+        if a.has("pointer") || a.has("front"), let t = a.pos.first, let win = try? desk.window(t), win.isMirroring {
+            try mayBorrow(win, a.has("pointer") ? "--pointer" : "--front")
+        }
         switch cmd {
         case "apps": return apps()
         case "windows": return try windows(a.pos.first)
@@ -332,6 +339,14 @@ final class Commands {
     // settle: look again until two looks agree, for things that animate. Each look of a
     // long pane can take seconds on a busy Mac, so scrolls (which rarely change the
     // list) take just one.
+    private func mayBorrow(_ win: Win, _ flag: String) throws {
+        guard Input.mikeActive() else { return }
+        throw CubError("Not done: \(flag) on iPhone Mirroring takes \(userName)'s mouse and keyboard, and he's used the Mac in the last two minutes. "
+            + "Run it again without \(flag): clicks, swipes, typing and keys all reach the phone from the background. The first one after it connects "
+            + "often gets eaten, so if a shot shows a miss, send it again the same way. If it really can't be done from the background, wait until "
+            + "he's been away a couple of minutes, or ask him. Don't get round this with osascript or your own events: they take his input just the same.")
+    }
+
     private func acting(_ win: Win, settle: Bool = true, _ body: () throws -> String) throws -> String {
         let before = Set(desk.windows(of: win.app).map(\.id))
         if desk.lastLines[win.id] == nil { desk.lastLines[win.id] = Snapshot.lines(win, desk) }
@@ -834,6 +849,11 @@ final class Commands {
                         }
                         return "Scrolled \(direction) about 40% of the window, with wheel scrolls sent to the window, so \(userName)'s pointer stayed put."
                     }
+                }
+                if Input.mikeActive() {
+                    throw CubError("The phone didn't move with a scroll sent from the background (it may be at the end of the list, or still connecting). "
+                        + "Scrolling it with the real pointer would take \(userName)'s mouse, and he's using the Mac, so I didn't. "
+                        + "Take a shot to check, try the scroll again, or wait until he's been away a couple of minutes.")
                 }
                 try Input.scroll(at: mid, lines: lines, in: win)
                 return "Scrolled \(direction) about half the window with a wheel scroll, which borrowed \(userName)'s pointer for a moment."

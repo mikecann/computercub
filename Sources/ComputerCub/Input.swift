@@ -297,6 +297,30 @@ enum Input {
     // app in the background doesn't have). This brings the window forward just for
     // them, then gives Mike back whatever he had in front.
     //
+    // MARK: Is Mike at the Mac?
+
+    // When ComputerCub last took the real pointer or the front app. The idle clock counts
+    // that as input too, so it mustn't read as Mike coming back.
+    static var lastBorrow: Date?
+
+    // Seconds since the last key or mouse input, the HIDIdleTime `ioreg -c IOHIDSystem` shows.
+    static func idleSeconds() -> Double {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+        guard service != 0 else { return .infinity }
+        defer { IOObjectRelease(service) }
+        let ns = IORegistryEntryCreateCFProperty(service, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? NSNumber
+        return ns.map { $0.doubleValue / 1e9 } ?? .infinity
+    }
+
+    // Whether Mike has used the Mac in the last two minutes. When the last input was one of
+    // ComputerCub's own borrows, that only ran because he'd been away, so he still is.
+    static func mikeActive(within seconds: Double = 120) -> Bool {
+        let idle = idleSeconds()
+        if let b = lastBorrow, idle + 2 >= Date().timeIntervalSince(b) { return false }
+        return idle < seconds
+    }
+
     // While it's borrowed, Mike's own typing would land in that window: a stray letter
     // went into a TextEdit document, and in System Settings a space flips the focused
     // switch. So his keys are held meanwhile and replayed once he has his app back.
@@ -323,6 +347,7 @@ enum Input {
                 }
             }
             for e in hold?.release() ?? [] { e.post(tap: .cghidEventTap) }
+            lastBorrow = Date()
         }
         return try body()
     }
@@ -768,6 +793,7 @@ enum Input {
     }
 
     private static func realClick(at p: CGPoint, double: Bool, hold: useconds_t = 20_000) {
+        defer { lastBorrow = Date() }
         let saved = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
         usleep(40_000)

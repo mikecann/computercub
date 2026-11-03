@@ -60,8 +60,9 @@ look yourself. He's had to remind agents that this exists.
 - Drive it with positions from its last shot, in that picture's pixels: `computercub click "iPhone Mirroring" x y`,
   `computercub swipe "iPhone Mirroring" x y x2 y2`, and `computercub type "iPhone Mirroring" "text" [--submit]` after
   tapping the field. `computercub press "iPhone Mirroring" cmd+1` goes Home, `cmd+2` opens the app switcher, `cmd+3` Search.
-  All of it runs from the background, so Mike keeps his pointer, keyboard and front app. Don't use `--pointer`, `--front`
-  or your own click tool here: they take them from him, and he finds that really annoying.
+  All of it runs from the background, so Mike keeps his pointer, keyboard and front app. `--pointer` and `--front` take them
+  from him, so on the mirror they're refused while he's used the Mac in the last two minutes; don't get round that with
+  osascript or your own events. When a tap misses, send it again the same way: the first one after it connects often gets eaten.
 - `type` sends short text as real keys, as a keyboard plugged into the phone would. Long text (over 60 characters),
   anything with a line break, and characters that aren't on a US keyboard go in as a paste instead, in one call, with
   Mike's clipboard put back after. So send a whole multi-line message in one `type`, not a call per line. `press`
@@ -71,7 +72,8 @@ look yourself. He's had to remind agents that this exists.
 - `swipe` is a finger drag: it pages the home screen and works sideways swipes and sliders, but a drag doesn't scroll
   a list on the phone (iOS treats a pointer drag as a drag, as on an iPad). For lists use
   `computercub scroll "iPhone Mirroring" down` (or `up`), about 40% of a screen each, from the background in about
-  8 seconds. If that doesn't move the phone it falls back to borrowing Mike's pointer for about a second, and says so.
+  8 seconds. If that doesn't move the phone it borrows Mike's pointer for about a second, but only while he's away;
+  otherwise it says so, and you take a shot and try again.
   Start swipes on an empty spot: if the drag doesn't take, the phone sees a tap where it started.
 - Each one answers without saying what changed, so take a new shot after it. Look before tapping again, since a tap that
   worked can take a moment to show, and repeating it lands on whatever's there now. The first gesture after it
