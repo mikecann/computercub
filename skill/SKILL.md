@@ -13,6 +13,9 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 2. `computercub snap <window>` lists controls as `e12 button "Save"`. Later snaps show only
    what changed. On a long pane, `computercub snap <window> --find Privacy` lists just the
    matching controls. `computercub read <window>` gives the words, for reading values.
+   Links show their real address when the name is a shortened one (Slack's
+   `link "dropbox.com/…" → https://…`); `--find` gives every matching link's full address
+   (`--find dropbox`), and `computercub read <ref>` lists the links inside that element.
 3. `computercub click e12`, `computercub type e7 "text" [--submit]`, `computercub press <window> cmd+shift+g`,
    `computercub menu <app> "File > New Window"`, `computercub drag e19 e18` (a file onto a folder),
    `computercub move <window> x y [w h]`, `computercub scroll <window> down` (says how far down it

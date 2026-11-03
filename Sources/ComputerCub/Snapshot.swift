@@ -49,6 +49,8 @@ enum Snapshot {
         let win: Win
         let desk: Desktop
         let all: Bool
+        // --find wants every link's address, in full: finding the real URL is the point.
+        let fullURLs: Bool
         var lines: [String] = []
         var signatures: [String: String] = [:]
         private var seen: [String: Int] = [:]
@@ -63,10 +65,11 @@ enum Snapshot {
         var floating: [AXUIElement] = []
         let deadline = Date().addingTimeInterval(6)
 
-        init(_ win: Win, _ desk: Desktop, all: Bool) {
+        init(_ win: Win, _ desk: Desktop, all: Bool, fullURLs: Bool = false) {
             self.win = win
             self.desk = desk
             self.all = all
+            self.fullURLs = fullURLs
         }
 
         // inWeb: inside a web page, where rows and cells are layout, not things to pick.
@@ -200,6 +203,13 @@ enum Snapshot {
             if (v[kAXExpandedAttribute] as? Bool) == true, !flags.contains("expanded") { flags.append("expanded") }
             if (v[kAXFocusedAttribute] as? Bool) == true { flags.append("focused") }
             if !flags.isEmpty { s += " [\(flags.joined(separator: ", "))]" }
+            // Chat apps show a link as a shortened address ("dropbox.com/scl/fo/…"), so the
+            // real one is listed when the name looks like an address or there's no name.
+            // Ordinary "Docs" links stay bare in a snap to keep it short; --find lists them all.
+            if kind == "link", fullURLs || name.isEmpty || Snapshot.looksLikeURL(name), let url = Snapshot.url(of: el),
+               url != name, url.replacingOccurrences(of: #"^https?://(www\.)?"#, with: "", options: .regularExpression) != name {
+                s += " → \(fullURLs ? url : clip(url, 200))"
+            }
             return (s, name)
         }
 
@@ -256,16 +266,28 @@ enum Snapshot {
         }
     }
 
-    static func lines(_ win: Win, _ desk: Desktop, all: Bool = false) -> [String] {
+    static func url(of el: AXUIElement) -> String? {
+        let v = el.attr("AXURL")
+        if let u = v as? URL { return u.absoluteString }
+        if let s = v as? String, !s.isEmpty { return s }
+        return nil
+    }
+
+    // "dropbox.com/scl/fo/…", "https://…", "github.com/x": one word with a dot or slash in it.
+    static func looksLikeURL(_ name: String) -> Bool {
+        !name.contains(" ") && (name.contains("/") || name.contains("…") || name.range(of: #"\.[a-z]{2,}"#, options: .regularExpression) != nil)
+    }
+
+    static func lines(_ win: Win, _ desk: Desktop, all: Bool = false, fullURLs: Bool = false) -> [String] {
         let justTurnedOn = desk.ensureWeb(win.app)
-        var w = Walker(win, desk, all: all)
+        var w = Walker(win, desk, all: all, fullURLs: fullURLs)
         w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
         // Chrome builds the page's tree a moment after it's asked for; wait for it once.
         let pageMissing = w.emptyWebArea || (Desktop.isChromium(win.app) && !w.sawWebArea)
         if pageMissing && (justTurnedOn || desk.tryEnhancedWeb(win.app)) {
             for _ in 0..<6 where w.emptyWebArea || !w.sawWebArea {
                 usleep(500_000)
-                w = Walker(win, desk, all: all)
+                w = Walker(win, desk, all: all, fullURLs: fullURLs)
                 w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
             }
         }
@@ -282,7 +304,7 @@ enum Snapshot {
         }
         for _ in 0..<4 where menuOpen && !found {
             usleep(250_000)
-            w = Walker(win, desk, all: all)
+            w = Walker(win, desk, all: all, fullURLs: fullURLs)
             w.walk(win.el, depth: 0, inWeb: false, row: nil, inDialog: false)
             found = w.floating.contains { $0.string(kAXRoleAttribute) == "AXMenu" }
         }

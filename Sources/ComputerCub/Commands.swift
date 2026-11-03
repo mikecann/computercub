@@ -48,8 +48,10 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub snap <window> [--full] [--all]  what you can click or type in, with refs
                                               (e12); after the first look, only what changed
   computercub snap <window> --find <text>     just the controls whose line has that text,
-                                              searching the whole window
-  computercub read <window|ref>               the words in a window or element
+                                              searching the whole window, links with
+                                              their full address (→ https://…)
+  computercub read <window|ref>               the words in a window or element; a ref
+                                              also lists its links' addresses
   computercub click <ref> [--double] [--mouse] [--pointer]
                                               --mouse sends a click to the window, pointer
                                               untouched; --pointer uses the real one
@@ -245,7 +247,7 @@ final class Commands {
     private func find(_ target: String, _ text: String) throws -> String {
         guard !text.isEmpty else { throw CubError("Find what? e.g. `computercub snap \(target) --find Privacy`.") }
         let win = try desk.window(target)
-        let lines = Snapshot.lines(win, desk, all: true)
+        let lines = Snapshot.lines(win, desk, all: true, fullURLs: true)
         // Landmarks ([sheet], [toolbar]) say where a match is; keep the one above each.
         var out: [String] = [], landmark: String?
         for l in lines {
@@ -266,7 +268,8 @@ final class Commands {
 
     private func read(_ target: String) throws -> String {
         let root: AXUIElement, win: Win
-        if target.range(of: #"^e\d+$"#, options: .regularExpression) != nil {
+        let isRef = target.range(of: #"^e\d+$"#, options: .regularExpression) != nil
+        if isRef {
             (root, win) = try desk.lookup(target)
         } else {
             win = try desk.window(target)
@@ -274,6 +277,10 @@ final class Commands {
             _ = desk.ensureWeb(win.app)
         }
         var out: [String] = []
+        // Reading one element (a chat message) also lists the addresses of its links,
+        // which the words alone don't carry. A whole window would be too many.
+        var links: [String] = []
+        let wantLinks = isRef
         var visited = 0
         func walk(_ el: AXUIElement, _ depth: Int) {
             visited += 1
@@ -291,12 +298,18 @@ final class Commands {
             case "AXTextField", "AXTextArea":
                 if (v[kAXSubroleAttribute] as? String) != "AXSecureTextField" { text = v[kAXValueAttribute] as? String }
             case "AXSecureTextField", "AXColumn", "AXScrollBar": return
+            case "AXLink" where wantLinks:
+                if let url = Snapshot.url(of: el), !links.contains(where: { $0.hasSuffix(url) }) {
+                    let t = clip((v[kAXTitleAttribute] as? String) ?? (v[kAXDescriptionAttribute] as? String) ?? "", 60)
+                    links.append(t.isEmpty ? url : "\(t) → \(url)")
+                }
             default: break
             }
             if let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty, out.last != t { out.append(t) }
             for k in v[kAXChildrenAttribute] as? [AXUIElement] ?? [] { walk(k, depth + 1) }
         }
         walk(root, 0)
+        if !links.isEmpty { out += ["## Links"] + links }
         let text = out.joined(separator: "\n")
         let header = desk.header(win)
         // Long pages go to a file, so the agent can grep them instead of reading it all.
@@ -305,7 +318,9 @@ final class Commands {
             try FileManager.default.createDirectory(at: Paths.reads, withIntermediateDirectories: true)
             let url = Paths.reads.appendingPathComponent("\(Shot.safeName(win.appName))-\(Shot.stamp()).txt")
             try text.write(to: url, atomically: true, encoding: .utf8)
-            return "\(header)\n\(text.prefix(1500))\n… \(text.count) characters in all, saved to \(url.path) (deleted after an hour)"
+            // The links are what a ref read is often for, so they make the cut either way.
+            let tail = links.isEmpty ? "" : "\n## Links\n" + links.joined(separator: "\n")
+            return "\(header)\n\(text.prefix(1500))\n… \(text.count) characters in all, saved to \(url.path) (deleted after an hour)\(tail)"
         }
         return "\(header)\n\(text)"
     }

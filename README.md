@@ -57,6 +57,7 @@ It signs with your first Apple Development identity if you have one, so the perm
 computercub windows                                 # every app's windows, with refs and which display
 computercub snap Finder                             # what you can click or type in, as e12-style refs
 computercub snap "System Settings" --find Privacy   # just the controls that mention Privacy, however far down
+computercub snap Slack --find dropbox                # links show the address behind them: e58 link "Seth" → https://www.dropbox.com/…
 computercub click e23
 computercub press w2 cmd+shift+g                    # keys go to the app, even in the background
 computercub type e57 "~/Downloads" --submit
