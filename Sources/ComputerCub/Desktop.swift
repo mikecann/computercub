@@ -9,6 +9,8 @@ struct Win {
     var pid: pid_t { app.processIdentifier }
     var appName: String { app.localizedName ?? "pid \(pid)" }
     var title: String { el.string(kAXTitleAttribute) ?? "" }
+    // Mike's iPhone, mirrored: nothing in Accessibility, and keys go on to the phone.
+    var isMirroring: Bool { app.bundleIdentifier == "com.apple.ScreenContinuity" }
 }
 
 // Everything the service remembers between commands: which refs point where, and the

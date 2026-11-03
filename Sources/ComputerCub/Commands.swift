@@ -508,12 +508,48 @@ final class Commands {
         let win = try desk.window(target)
         return try acting(win) {
             if !front { Input.focusBehind(win) }
+            if win.isMirroring && Self.pastes(text) {
+                try pasteOnPhone(text, win: win)
+                if submit { try Input.key("return", pid: win.pid, modifierKeys: true) }
+                return "Pasted it on the phone\(submit ? " and pressed Return" : "")."
+            }
             let moved = try Input.toWindow(win, front: front) { to in
-                try Input.type(text, pid: to)
+                if win.isMirroring { try Input.typeByKey(text, pid: to) } else { try Input.type(text, pid: to) }
                 if submit { try Input.key("return", pid: to) }
             }
             return "Sent the keys to the window\(moved ? " in front" : "")\(submit ? " and pressed Return" : "")."
         }
+    }
+
+    // Text for the phone that goes faster and safer as a paste than as keys: long text (each
+    // key is a round trip to the phone, and a long run is where keys went wrong), anything
+    // with a line break, and characters with no key on a US keyboard.
+    static func pastes(_ text: String) -> Bool {
+        text.count > 60 || text.contains("\n") || text.contains { Input.usKey($0) == nil }
+    }
+
+    // Puts the text on the Mac's clipboard and presses cmd+v in the mirror, which pastes it
+    // on the phone, as Mike would. His clipboard goes back the way it was afterwards.
+    private func pasteOnPhone(_ text: String, win: Win) throws {
+        let board = NSPasteboard.general
+        let saved = (board.pasteboardItems ?? []).map { item in
+            item.types.compactMap { t in item.data(forType: t).map { (t, $0) } }
+        }
+        board.clearContents()
+        board.setString(text, forType: .string)
+        defer {
+            // Give the phone time to fetch it before it's swapped back.
+            usleep(1_500_000)
+            board.clearContents()
+            board.writeObjects(saved.map { kinds in
+                let item = NSPasteboardItem()
+                for (t, d) in kinds { item.setData(d, forType: t) }
+                return item
+            })
+        }
+        Input.focusBehind(win)
+        usleep(300_000)
+        try Input.key("cmd+v", pid: win.pid, modifierKeys: true)
     }
 
     // Tries from the background first. Some fields are drawn by a helper process that keys
@@ -614,6 +650,14 @@ final class Commands {
     // call to make, with --front.
     private func pressBehind(_ combo: String, _ win: Win) throws -> String {
         let cmd = try Input.parse(combo).1.contains(.maskCommand)
+        // The mirror passes keys on to the phone, cmd shortcuts too, but only while it thinks
+        // it has focus: without this, only the first of 55 deletes landed. Its Edit menu
+        // greys out in the background, so cmd+a goes as keys rather than "Not sent".
+        if win.isMirroring, (try Input.menuItem(for: combo, pid: win.pid))?.2 != true {
+            Input.focusBehind(win)
+            try Input.key(combo, pid: win.pid, modifierKeys: true)
+            return combo
+        }
         let sheet = Input.onSheet(win)
         let retry = "If it's worth taking \(userName)'s focus, run it again with --front."
         // macOS only fires a shortcut in the active app, so press its menu item instead.

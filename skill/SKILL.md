@@ -59,6 +59,10 @@ look yourself. He's had to remind agents that this exists.
   tapping the field. `computercub press "iPhone Mirroring" cmd+1` goes Home, `cmd+2` opens the app switcher, `cmd+3` Search.
   All of it runs from the background, so Mike keeps his pointer, keyboard and front app. Don't use `--pointer`, `--front`
   or your own click tool here: they take them from him, and he finds that really annoying.
+- `type` sends short text as real keys, as a keyboard plugged into the phone would. Long text (over 60 characters),
+  anything with a line break, and characters that aren't on a US keyboard go in as a paste instead, in one call, with
+  Mike's clipboard put back after. So send a whole multi-line message in one `type`, not a call per line. `press`
+  works on the phone too: `cmd+a` then `delete` clears a field. If keys don't show up, tap the field and try again.
 - `swipe` is a finger drag: it pages the home screen and works sideways swipes and sliders, but a drag doesn't scroll
   a list on the phone (iOS treats a pointer drag as a drag, as on an iPad). For lists use
   `computercub scroll "iPhone Mirroring" down` (or `up`), about 40% of a screen each, from the background in about

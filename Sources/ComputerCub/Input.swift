@@ -45,7 +45,10 @@ enum Input {
         if let pid { e.postToPid(pid) } else { e.post(tap: .cghidEventTap) }
     }
 
-    static func key(_ combo: String, pid: pid_t?) throws {
+    // modifierKeys also presses and lets go of the modifiers themselves, as a keyboard does.
+    // iPhone Mirroring needs that for cmd: it passes keys on to the phone as a hardware
+    // keyboard, and cmd+a with only the flag set arrived as a plain "a".
+    static func key(_ combo: String, pid: pid_t?, modifierKeys: Bool = false) throws {
         let (code, flags) = try parse(combo)
         let src = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true),
@@ -54,10 +57,68 @@ enum Input {
         }
         down.flags = flags
         up.flags = flags
+        let mods = modifierKeys ? modifiers(flags) : []
+        var held: CGEventFlags = []
+        for (m, f) in mods {
+            held.insert(f)
+            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: true) { e.type = .flagsChanged; e.flags = held; post(e, pid) }
+            usleep(15_000)
+        }
         post(down, pid)
         usleep(12_000)
         post(up, pid)
-        usleep(30_000)
+        usleep(15_000)
+        for (m, f) in mods.reversed() {
+            held.remove(f)
+            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: false) { e.type = .flagsChanged; e.flags = held; post(e, pid) }
+            usleep(15_000)
+        }
+        usleep(15_000)
+    }
+
+    // The left-hand modifier keys for a set of flags.
+    static func modifiers(_ flags: CGEventFlags) -> [(CGKeyCode, CGEventFlags)] {
+        [(55, .maskCommand), (56, .maskShift), (58, .maskAlternate), (59, .maskControl)].filter { flags.contains($0.1) }
+    }
+
+    // The US key and shift for a character, for apps that read the key code rather than
+    // the text an event carries (iPhone Mirroring, below).
+    static func usKey(_ ch: Character) -> (CGKeyCode, shift: Bool)? {
+        let shifted: [Character: Character] = ["~": "`", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
+            "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", "\"": "'", "<": ",",
+            ">": ".", "?": "/"]
+        if ch == " " { return (49, false) }
+        if ch == "\n" { return (36, false) }
+        if ch == "\t" { return (48, false) }
+        if let base = shifted[ch], let code = codes[String(base)] { return (code, true) }
+        let lower = Character(ch.lowercased())
+        guard let code = codes[String(lower)], String(lower).count == 1, lower.isASCII else { return nil }
+        return (code, ch.isUppercase)
+    }
+
+    // iPhone Mirroring passes keys on to the phone as a hardware keyboard would, by key code,
+    // ignoring the text a posted event carries: text sent as key code 0 with a Unicode string
+    // came out on the phone as "Aaaaa…". And Return posted as a key while the letters went as
+    // text landed a letter late ("here.M\ny"). So every character goes as its real key, held
+    // for a moment and in one steady stream, the way a person types. Throws, before sending
+    // anything, for characters with no key on a US keyboard.
+    static func typeByKey(_ text: String, pid: pid_t?) throws {
+        let keys = try text.map { ch -> (CGKeyCode, Bool, [UniChar]) in
+            guard let (code, shift) = usKey(ch) else {
+                throw CubError("There's no key for \"\(ch)\" on a US keyboard.")
+            }
+            return (code, shift, Array(String(ch).utf16))
+        }
+        let src = CGEventSource(stateID: .hidSystemState)
+        for (code, shift, units) in keys {
+            for down in [true, false] {
+                guard let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down) else { continue }
+                e.flags = shift ? .maskShift : []
+                e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+                post(e, pid)
+                usleep(down ? 12_000 : 18_000)
+            }
+        }
     }
 
     static func type(_ text: String, pid: pid_t?) throws {
