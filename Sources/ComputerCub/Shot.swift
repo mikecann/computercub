@@ -109,6 +109,44 @@ enum Shot {
         return ("\(url.path) (\(image.width)×\(image.height))" + (overlays.isEmpty ? "" : ", with \(open)"), map)
     }
 
+    // A tiny greyscale picture of the window, kept in memory only, for telling whether a
+    // scroll did anything in a window Accessibility can't see into. Nil without Screen
+    // Recording or when the capture fails.
+    static func thumb(_ win: Win) -> [UInt8]? {
+        guard CGPreflightScreenCaptureAccess(), win.id != 0 else { return nil }
+        final class Box: @unchecked Sendable { var image: CGImage? }
+        let box = Box(), done = DispatchSemaphore(value: 0), id = win.id
+        Task.detached {
+            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+               let w = content.windows.first(where: { $0.windowID == id }) {
+                let cfg = SCStreamConfiguration()
+                cfg.width = 64
+                cfg.height = max(1, Int(64 * w.frame.height / max(w.frame.width, 1)))
+                cfg.showsCursor = false
+                cfg.ignoreShadowsSingleWindow = true
+                box.image = try? await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg)
+            }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 5) == .success, let image = box.image else { return nil }
+        var px = [UInt8](repeating: 0, count: image.width * image.height)
+        let drew = px.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: image.width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
+        }
+        return drew ? px : nil
+    }
+
+    // More than a sliver of the picture changed: a clock ticking over or a cursor blinking
+    // shouldn't count as a scroll.
+    static func moved(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        guard a.count == b.count, !a.isEmpty else { return a != b }
+        let changed = zip(a, b).filter { abs(Int($0) - Int($1)) > 24 }.count
+        return Double(changed) / Double(a.count) > 0.03
+    }
+
     // Screenshots and long reads can hold anything that was on screen, so they don't
     // hang around: an hour, or `computercub clean` for right now.
     static func sweep(olderThan age: TimeInterval = 3600) {

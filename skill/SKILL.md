@@ -61,11 +61,9 @@ look yourself. He's had to remind agents that this exists.
   or your own click tool here: they take them from him, and he finds that really annoying.
 - `swipe` is a finger drag: it pages the home screen and works sideways swipes and sliders, but a drag doesn't scroll
   a list on the phone (iOS treats a pointer drag as a drag, as on an iPad). For lists use
-  `computercub scroll "iPhone Mirroring" down` (or `up`), about half a screen each. The mirror only takes a scroll with
-  the real pointer over it, so that one borrows Mike's pointer and brings the window up for about a second; check he's
-  not mid-sentence first (`ioreg -c IOHIDSystem | awk '/HIDIdleTime/{print int($NF/1e9); exit}'`, seconds since his
-  last input) and scroll in as few goes as you can. Start swipes on an empty spot: if the drag doesn't take, the phone
-  sees a tap where it started.
+  `computercub scroll "iPhone Mirroring" down` (or `up`), about 40% of a screen each, from the background in about
+  8 seconds. If that doesn't move the phone it falls back to borrowing Mike's pointer for about a second, and says so.
+  Start swipes on an empty spot: if the drag doesn't take, the phone sees a tap where it started.
 - Each one answers without saying what changed, so take a new shot after it. Look before tapping again, since a tap that
   worked can take a moment to show, and repeating it lands on whatever's there now. The first gesture after it
   connects can get eaten, and small buttons sometimes miss. Passwords and passcodes stay Mike's.

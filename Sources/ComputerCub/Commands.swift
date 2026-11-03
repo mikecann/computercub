@@ -750,7 +750,28 @@ final class Commands {
             return try acting(win, settle: false) {
                 // About half the window per scroll, so what was at the edge stays in view.
                 let lines = Int32((f.height / 2 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
-                try Input.scroll(at: CGPoint(x: f.width / 2, y: f.height / 2), lines: lines, in: win)
+                let mid = CGPoint(x: f.width / 2, y: f.height / 2)
+                // From the background first. The mirror hands the phone one short flick per
+                // burst of posted wheel events (a lone event did nothing), however many lines
+                // the burst says, and ignores the next burst until it's had a pause. So it's
+                // bursts with a pause between; each takes about half a second, so it stops at
+                // about 40% of the window. Nothing says whether they land, so look at the window
+                // after the first, and borrow the pointer if the picture didn't move (the phone
+                // still connecting, or a macOS that stops this).
+                if let before = Shot.thumb(win) {
+                    Input.focusBehind(win)
+                    Input.post(wheel: lines, at: mid, in: win)
+                    usleep(300_000)
+                    if let after = Shot.thumb(win), Shot.moved(before, after) {
+                        let flicks = max(1, Int((f.height * 0.4 / Input.flickPoints).rounded()))
+                        for _ in 1..<flicks {
+                            Input.post(wheel: lines, at: mid, in: win)
+                            usleep(300_000)
+                        }
+                        return "Scrolled \(direction) about 40% of the window, with wheel scrolls sent to the window, so \(userName)'s pointer stayed put."
+                    }
+                }
+                try Input.scroll(at: mid, lines: lines, in: win)
                 return "Scrolled \(direction) about half the window with a wheel scroll, which borrowed \(userName)'s pointer for a moment."
             }
         }

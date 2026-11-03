@@ -500,6 +500,40 @@ enum Input {
         send(.leftMouseUp, at: b, in: win, frame: w, n: 1, src)
     }
 
+    // A mouse-wheel scroll at a point in the window, sent to its process like a posted
+    // click, so Mike's pointer stays put. cua-driver's recipe: a mouse move there first,
+    // since a window in the background still thinks the pointer is where it last saw it
+    // and would scroll whatever's under that, then each wheel event stamped with the
+    // window and point and the pid (field 40), and posted both through SkyLight and
+    // plainly, as each reaches apps the other doesn't. Nothing reads back whether it
+    // scrolled, so callers check.
+    static func post(wheel lines: Int32, at local: CGPoint, in win: Win) {
+        guard let w = win.el.frame else { return }
+        send(.mouseMoved, at: local, in: win, frame: w, n: 0, CGEventSource(stateID: .hidSystemState))
+        usleep(15_000)
+        var left = lines
+        while left != 0 {
+            let n = left > 0 ? min(left, 5) : max(left, -5)
+            guard let e = CGEvent(scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState), units: .line,
+                                  wheelCount: 2, wheel1: n, wheel2: 0, wheel3: 0) else { return }
+            e.location = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
+            let id = Int64(win.id)
+            e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
+            e.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: id)
+            e.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: id)
+            e.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(win.pid))
+            setWindowLocation?(e, local)
+            skyPost?(win.pid, e)
+            e.postToPid(win.pid)
+            left -= n
+            usleep(30_000)
+        }
+    }
+
+    // How far the phone moves for one posted wheel burst (see Commands.scroll), measured
+    // in its mirror window on 3 Nov 2026: 30 to 45 points, whatever the burst's size.
+    static let flickPoints: CGFloat = 30
+
     // Quick enough to read as a swipe rather than a slow drag, in steps small enough that
     // it doesn't look like a jump.
     private static func swipeSteps(from a: CGPoint, to b: CGPoint) -> [CGPoint] {
