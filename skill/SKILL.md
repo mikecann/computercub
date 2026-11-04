@@ -50,10 +50,21 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
 
-## iPhone Mirroring
+## Mike's iPhone
 
 Before asking Mike to check something on his iPhone 15 Pro Max (a setting, what's on screen),
-look yourself. He's had to remind agents that this exists.
+look yourself. He's had to remind agents that this exists. There are two ways in, and which
+one works depends on whether the phone is locked.
+
+**Unlocked: `phone`.** A helper on the phone itself takes taps over Wi-Fi, so nothing on the Mac
+is touched. `computercub shot phone`, then `click phone x y [--double|--long]`,
+`swipe phone x y x2 y2`, `scroll phone down|up`, `type phone "text" [--submit]` after tapping the
+field, `press phone home|return|delete|tab`, all in the last shot's pixels. The first command
+starts the helper (about 10 seconds); after that each takes under a second. Try it first. If it
+says the phone is locked, use iPhone Mirroring below. If it says the phone asked for Face ID,
+ask Mike to look at his phone, then run it again.
+
+**Locked: iPhone Mirroring.**
 
 - `open -a "iPhone Mirroring"`, wait a few seconds, then `computercub shot "iPhone Mirroring"`.
   The window exposes nothing to Accessibility, so `snap` gives no refs and shots are how you read it.

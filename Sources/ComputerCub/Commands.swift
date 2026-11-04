@@ -89,6 +89,10 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               the person at the Mac should do
   computercub resume                          after \(userName) clicks stop on a window's
                                               marker, carry on there; only when they say so
+  computercub phone [status|stop]             \(userName)'s iPhone through its own helper (needs it
+                                              unlocked); shot, click, swipe, scroll, type and
+                                              press take `phone` as the window. --long on click
+                                              holds; press takes home, return, delete, tab
   computercub doctor                          permissions and displays
   computercub setup                           the window that walks through the permissions
   computercub clean                           delete screenshots and saved reads now
@@ -140,10 +144,15 @@ final class Commands {
 
     // Called from the service's timer.
     func tick() {
-        work.async { self.desk.relaxWeb(idleFor: 120) }
+        work.async { self.desk.relaxWeb(idleFor: 120); Phone.shared.tick() }
     }
 
     private func dispatch(_ cmd: String, _ a: Args) throws -> String {
+        // The phone through its own helper, which needs nothing from the Mac's screen, so
+        // before the Accessibility and screen-lock checks.
+        if cmd == "phone" || (["shot", "click", "swipe", "scroll", "type", "press", "snap", "read"].contains(cmd) && a.pos.first?.lowercased() == "phone") {
+            return try Phone.shared.run(cmd, a)
+        }
         if cmd == "doctor" { return doctor() }
         if cmd == "clean" {
             Shot.sweep(olderThan: 0)
