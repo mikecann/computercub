@@ -73,7 +73,8 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               e.g. cmd+shift+g, return, escape, tab, down. The
                                               window stays in the background: cmd shortcuts
                                               press their menu item. Where keys can't reach it,
-                                              it says so; --front brings it forward
+                                              it says so; --front brings it forward.
+                                              Quote keys with [ ] ? or *: 'cmd+[' (zsh globs them)
   computercub menu <app> [File > New Window]  list an app's menus, or pick an item
   computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area.
                                               In a window with no refs (a phone), a wheel
@@ -435,7 +436,7 @@ final class Commands {
             let role = el.string(kAXRoleAttribute) ?? ""
             let actions = el.actions
             if actions.contains(kAXPressAction) {
-                let r = el.perform(kAXPressAction)
+                let r = (webTreeRowTarget(el) ?? el).perform(kAXPressAction)
                 guard r == .success else { throw CubError("Pressing \(ref) failed (AX error \(r.rawValue)). Try --mouse.") }
                 return "Pressed \(ref)."
             }
@@ -513,6 +514,23 @@ final class Commands {
     }
 
     private func fmt(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+
+    // A web tree row (ARIA treeitem) answers AXPress by becoming selected, and nothing more:
+    // Slack's sidebar row went [selected] and stayed on the old channel. The click handler
+    // is on the element inside it (Slack's p-channel_sidebar__channel), so press that.
+    private func webTreeRowTarget(_ el: AXUIElement) -> AXUIElement? {
+        guard el.string(kAXSubroleAttribute) == "AXOutlineRow" else { return nil }
+        var up = el.element(kAXParentAttribute)
+        for _ in 0..<40 {
+            guard let u = up else { return nil }
+            if u.string(kAXRoleAttribute) == "AXWebArea" { break }
+            up = u.element(kAXParentAttribute)
+        }
+        guard up != nil else { return nil }
+        return el.elements(kAXChildrenAttribute).first {
+            $0.string(kAXSubroleAttribute) != "AXOutlineRow" && $0.actions.contains(kAXPressAction)
+        }
+    }
 
     // The element itself, its cells (a row), or the cell around it (a row's text).
     private func openable(_ el: AXUIElement) -> AXUIElement? {

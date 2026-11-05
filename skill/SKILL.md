@@ -16,11 +16,13 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    Links show their real address when the name is a shortened one (Slack's
    `link "dropbox.com/…" → https://…`); `--find` gives every matching link's full address
    (`--find dropbox`), and `computercub read <ref>` lists the links inside that element.
+   In Slack and other Electron apps, sidebar channels are rows: `snap <window> --find marketing`,
+   then `click` the row's ref to open it, rather than clicking a position from a shot.
 3. `computercub click e12`, `computercub type e7 "text" [--submit]`, `computercub press <window> cmd+shift+g`,
    `computercub menu <app> "File > New Window"`, `computercub drag e19 e18` (a file onto a folder),
    `computercub move <window> x y [w h]`, `computercub scroll <window> down` (says how far down it
    got). Each answers with what changed, so don't snap again after it. In a file picker,
-   cmd+shift+g opens Go to Folder for hidden places like ~/Library.
+   cmd+shift+g opens Go to Folder for hidden places like ~/Library. Quote keys with brackets or `?` (`press w3 'cmd+['`): zsh reads them as a file pattern.
 4. Windows stay in the background, so Mike keeps his focus. `press` runs a cmd shortcut by
    pressing its menu item, Return and Escape as the control's Confirm and Cancel (Escape on a
    Save or Open sheet presses its Cancel button), and other keys go to the app directly.

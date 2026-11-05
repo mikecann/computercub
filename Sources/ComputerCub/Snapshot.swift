@@ -60,6 +60,10 @@ enum Snapshot {
         var emptyWebArea = false
         var sawWebArea = false
         var truncated = false
+        // Rows of web trees (Slack's sidebar) listed so far, and the note that says how many
+        // more there were, so a sidebar of 100 channels doesn't swamp every snap.
+        private var webTreeRows = 0
+        private var moreTreeRows = 0, moreNote: Int?
         // The menus and popovers the walk went through: whether a menu on screen was listed,
         // and so a popover found by hit-testing isn't listed twice.
         var floating: [AXUIElement] = []
@@ -113,10 +117,23 @@ enum Snapshot {
                 }
                 return
             } else if var kind = Snapshot.subroles[sub ?? ""] ?? Snapshot.roles[role] {
-                if inWeb && (role == "AXRow") { kind = "" }
+                // Rows in a web page are usually table layout, but a tree's rows (ARIA treeitem,
+                // which arrives as AXOutlineRow) are what you click: Slack's channel list is one,
+                // and its channels sit inside their section's row.
+                let treeRow = inWeb && sub == "AXOutlineRow"
+                if inWeb && role == "AXRow" && !treeRow { kind = "" }
                 // A row's text is already in its name, and Finder gives every folder row its own
                 // unnamed disclosure triangle (Right arrow opens it anyway).
-                if row != nil && (kind == "textbox" || kind == "row" || kind == "disclosure") { kind = "" }
+                if row != nil && (kind == "textbox" || (kind == "row" && !treeRow) || kind == "disclosure") { kind = "" }
+                if treeRow && !all {
+                    webTreeRows += 1
+                    if webTreeRows > Snapshot.maxRows {
+                        moreTreeRows += 1
+                        let note = "… \(moreTreeRows) more rows (snap --all shows them, --find <text> searches)"
+                        if let i = moreNote { lines[i] = note } else { moreNote = lines.count; lines.append(note) }
+                        return
+                    }
+                }
                 if !kind.isEmpty {
                     let (l, name) = line(kind, el, v, kids, row: row)
                     // Unnamed rows are spacers between sidebar sections.
