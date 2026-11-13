@@ -858,11 +858,11 @@ final class Commands {
                 // over the element or the window's middle, with no pointer or window moved.
                 let at: CGPoint
                 if isRef, let r = el.frame { at = CGPoint(x: r.midX - f.minX, y: r.midY - f.minY) } else { at = CGPoint(x: f.width / 2, y: f.height / 2) }
-                // Over a ref, its column of the window counts on its own too, so a small list
-                // in a big still window isn't lost under the "more than a sliver" rule; a finer
-                // picture for that.
-                let part = isRef ? el.frame.map { PictureChange.column(of: $0, in: f) } : nil
-                let width = part == nil ? 64 : 256
+                // Over a ref, its column and its band of the window count on their own too,
+                // so a small list in a big still window isn't lost under the "more than a
+                // sliver" rule; a finer picture for that.
+                let parts = isRef ? el.frame.map { [PictureChange.column(of: $0, in: f), PictureChange.band(of: $0, in: f)] } ?? [] : []
+                let width = parts.isEmpty ? 64 : 256
                 return try acting(win, settle: false) {
                     // A covered GPUI window takes the scroll but doesn't draw it (see
                     // Input.isGPUI), so it's redrawn before the baseline, so changes from
@@ -878,7 +878,7 @@ final class Commands {
                     guard let before, let after = Shot.thumb(win, width: width) else {
                         return "Sent \(direction) wheel scrolls to the window, but without Screen Recording I can't see whether it moved. Snap again to check."
                     }
-                    guard Shot.moved(before, after, width: width) || (part.map { Shot.moved(before, after, width: width, part: $0) } ?? false) else {
+                    guard Shot.moved(before, after, width: width) || parts.contains(where: { Shot.moved(before, after, width: width, part: $0) }) else {
                         throw CubError("Nothing moved with a wheel scroll sent to \(target) from the background: it may already be at the \(direction == "up" ? "top" : "bottom"), or the app ignores scrolls it didn't get from the pointer. Take a shot to check.")
                     }
                     return "Scrolled \(direction) with wheel scrolls sent to the window, so \(userName)'s pointer stayed put. Snap again to see what came into view."

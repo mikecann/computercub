@@ -313,14 +313,15 @@ enum Input {
         return ns.map { $0.doubleValue / 1e9 } ?? .infinity
     }
 
-    // Whether an ordinary window above this one overlaps it. Bounds don't need Screen
+    // Whether an ordinary or floating window above this one overlaps it (layers under the
+    // Dock's 20; floating panels are 3). Bounds don't need Screen
     // Recording, so this works without it.
     static func covered(_ win: Win) -> Bool {
         guard win.id != 0, let f = win.el.frame else { return false }
         let above = CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow, .excludeDesktopElements], CGWindowID(win.id)) as? [[String: Any]] ?? []
         return above.contains { w in
             // Not ComputerCub's own: the outline around the window an agent is in sits above it.
-            guard (w[kCGWindowOwnerPID as String] as? Int32) != getpid(), (w[kCGWindowLayer as String] as? Int) == 0, (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+            guard (w[kCGWindowOwnerPID as String] as? Int32) != getpid(), (0..<20).contains(w[kCGWindowLayer as String] as? Int ?? -1), (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b) else { return false }
             return r.intersects(f)
         }
@@ -328,13 +329,15 @@ enum Input {
 
     // GPUI apps (Threadbear GPUI, Zed) stop drawing a window that's covered: it still takes
     // events, but its picture stays as it was until it's resized. Their binaries carry
-    // GPUI's own view class name, which is the cheapest sure sign. Kept per process.
-    private static var gpui: [pid_t: Bool] = [:]
+    // GPUI's own view class name, which is the cheapest sure sign.
+    // Kept per program file rather than per process, so a reused process number can't
+    // carry an old answer over.
+    private static var gpui: [String: Bool] = [:]
     static func isGPUI(_ pid: pid_t) -> Bool {
-        if let known = gpui[pid] { return known }
-        let url = NSRunningApplication(processIdentifier: pid)?.executableURL
-        let found = url.flatMap { try? Data(contentsOf: $0, options: .alwaysMapped) }?.range(of: Data("GPUIView".utf8)) != nil
-        gpui[pid] = found
+        guard let url = NSRunningApplication(processIdentifier: pid)?.executableURL else { return false }
+        if let known = gpui[url.path] { return known }
+        let found = (try? Data(contentsOf: url, options: .alwaysMapped))?.range(of: Data("GPUIView".utf8)) != nil
+        gpui[url.path] = found
         return found
     }
 

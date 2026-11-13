@@ -30,4 +30,14 @@ public enum PictureChange {
         let x = min(max(0, mid - w / 2), max(0, 1 - w))
         return CGRect(x: x, y: 0, width: min(1, w), height: 1)
     }
+
+    // Its band, side to side, a quarter of the window tall: for the row buttons in a gutter
+    // that look alike, where it's the labels beside them that change.
+    public static func band(of element: CGRect, in window: CGRect) -> CGRect {
+        guard window.height > 0 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let h = max(element.height / window.height, 0.25)
+        let mid = (element.midY - window.minY) / window.height
+        let y = min(max(0, mid - h / 2), max(0, 1 - h))
+        return CGRect(x: 0, y: y, width: 1, height: min(1, h))
+    }
 }
