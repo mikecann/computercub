@@ -858,24 +858,35 @@ final class Commands {
                 // over the element or the window's middle, with no pointer or window moved.
                 let at: CGPoint
                 if isRef, let r = el.frame { at = CGPoint(x: r.midX - f.minX, y: r.midY - f.minY) } else { at = CGPoint(x: f.width / 2, y: f.height / 2) }
+                // Over a ref, only its own spot counts, so a small list in a big still window
+                // isn't lost under the "more than a sliver" rule; a finer picture for that.
+                let part = isRef ? el.frame.map { CGRect(x: ($0.minX - f.minX) / f.width, y: ($0.minY - f.minY) / f.height,
+                                                         width: $0.width / f.width, height: $0.height / f.height) } : nil
+                let width = part == nil ? 64 : 256
                 return try acting(win, settle: false) {
-                    let before = Shot.thumb(win)
+                    // A GPUI window that's covered by another takes events but doesn't draw
+                    // them (so its shots go stale) until it's resized. A point taller and back
+                    // makes it draw, still behind: once before the baseline, so changes from
+                    // earlier don't pass for this scroll, and once after.
+                    let covered = Input.covered(win)
+                    func redraw() {
+                        var taller = CGSize(width: f.width, height: f.height + 1), back = f.size
+                        guard win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &taller)!) == .success else { return }
+                        usleep(150_000)
+                        win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &back)!)
+                        usleep(250_000)
+                    }
+                    if covered { redraw() }
+                    let before = Shot.thumb(win, width: width)
                     let lines = Int32((f.height * 0.4 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
                     Input.post(wheel: lines, at: at, in: win)
                     usleep(250_000)
-                    // Nothing says whether it landed, so compare the picture. A GPUI window
-                    // that's covered by another takes the scroll but doesn't draw it (so its
-                    // shots go stale too) until it's resized: a point taller and back makes it
-                    // draw, still behind, then look again.
-                    if let before, let after = Shot.thumb(win), !Shot.moved(before, after) {
-                        var taller = CGSize(width: f.width, height: f.height + 1), back = f.size
-                        if win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &taller)!) == .success {
-                            usleep(150_000)
-                            win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &back)!)
-                            usleep(250_000)
-                        }
+                    if covered { redraw() }
+                    // Nothing says whether it landed, so compare the picture.
+                    guard let before, let after = Shot.thumb(win, width: width) else {
+                        return "Sent \(direction) wheel scrolls to the window, but without Screen Recording I can't see whether it moved. Snap again to check."
                     }
-                    if let before, let after = Shot.thumb(win), !Shot.moved(before, after) {
+                    guard Shot.moved(before, after, width: width, part: part) else {
                         throw CubError("Nothing moved with a wheel scroll sent to \(target) from the background: it may already be at the \(direction == "up" ? "top" : "bottom"), or the app ignores scrolls it didn't get from the pointer. Take a shot to check.")
                     }
                     return "Scrolled \(direction) with wheel scrolls sent to the window, so \(userName)'s pointer stayed put. Snap again to see what came into view."

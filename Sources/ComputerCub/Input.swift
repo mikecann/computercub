@@ -315,6 +315,18 @@ enum Input {
 
     // Whether Mike has used the Mac in the last two minutes. When the last input was one of
     // ComputerCub's own borrows, that only ran because he'd been away, so he still is.
+    // Whether an ordinary window above this one overlaps it. Bounds don't need Screen
+    // Recording, so this works without it.
+    static func covered(_ win: Win) -> Bool {
+        guard win.id != 0, let f = win.el.frame else { return false }
+        let above = CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow, .excludeDesktopElements], CGWindowID(win.id)) as? [[String: Any]] ?? []
+        return above.contains { w in
+            guard (w[kCGWindowLayer as String] as? Int) == 0, (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b) else { return false }
+            return r.intersects(f)
+        }
+    }
+
     static func mikeActive(within seconds: Double = 120) -> Bool {
         let idle = idleSeconds()
         if let b = lastBorrow, idle + 2 >= Date().timeIntervalSince(b) { return false }

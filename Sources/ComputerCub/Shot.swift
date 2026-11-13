@@ -112,7 +112,7 @@ enum Shot {
     // A tiny greyscale picture of the window, kept in memory only, for telling whether a
     // scroll did anything in a window Accessibility can't see into. Nil without Screen
     // Recording or when the capture fails.
-    static func thumb(_ win: Win) -> [UInt8]? {
+    static func thumb(_ win: Win, width: Int = 64) -> [UInt8]? {
         guard CGPreflightScreenCaptureAccess(), win.id != 0 else { return nil }
         final class Box: @unchecked Sendable { var image: CGImage? }
         let box = Box(), done = DispatchSemaphore(value: 0), id = win.id
@@ -120,8 +120,8 @@ enum Shot {
             if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
                let w = content.windows.first(where: { $0.windowID == id }) {
                 let cfg = SCStreamConfiguration()
-                cfg.width = 64
-                cfg.height = max(1, Int(64 * w.frame.height / max(w.frame.width, 1)))
+                cfg.width = width
+                cfg.height = max(1, Int(Double(width) * w.frame.height / max(w.frame.width, 1)))
                 cfg.showsCursor = false
                 cfg.ignoreShadowsSingleWindow = true
                 box.image = try? await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg)
@@ -139,12 +139,9 @@ enum Shot {
         return drew ? px : nil
     }
 
-    // More than a sliver of the picture changed: a clock ticking over or a cursor blinking
-    // shouldn't count as a scroll.
-    static func moved(_ a: [UInt8], _ b: [UInt8]) -> Bool {
-        guard a.count == b.count, !a.isEmpty else { return a != b }
-        let changed = zip(a, b).filter { abs(Int($0) - Int($1)) > 24 }.count
-        return Double(changed) / Double(a.count) > 0.03
+    // See PictureChange.
+    static func moved(_ a: [UInt8], _ b: [UInt8], width: Int = 64, part: CGRect? = nil) -> Bool {
+        PictureChange.moved(a, b, width: width, part: part)
     }
 
     // Screenshots and long reads can hold anything that was on screen, so they don't
