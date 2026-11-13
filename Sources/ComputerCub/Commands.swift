@@ -863,7 +863,18 @@ final class Commands {
                     let lines = Int32((f.height * 0.4 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
                     Input.post(wheel: lines, at: at, in: win)
                     usleep(250_000)
-                    // Nothing says whether it landed, so compare the picture.
+                    // Nothing says whether it landed, so compare the picture. A GPUI window
+                    // that's covered by another takes the scroll but doesn't draw it (so its
+                    // shots go stale too) until it's resized: a point taller and back makes it
+                    // draw, still behind, then look again.
+                    if let before, let after = Shot.thumb(win), !Shot.moved(before, after) {
+                        var taller = CGSize(width: f.width, height: f.height + 1), back = f.size
+                        if win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &taller)!) == .success {
+                            usleep(150_000)
+                            win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &back)!)
+                            usleep(250_000)
+                        }
+                    }
                     if let before, let after = Shot.thumb(win), !Shot.moved(before, after) {
                         throw CubError("Nothing moved with a wheel scroll sent to \(target) from the background: it may already be at the \(direction == "up" ? "top" : "bottom"), or the app ignores scrolls it didn't get from the pointer. Take a shot to check.")
                     }
