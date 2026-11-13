@@ -101,7 +101,7 @@ For Chrome and other Chromium browsers it asks for their web accessibility tree,
 - Windows on other Spaces don't show up, because macOS only lists the current Space's.
 - Nothing can see or use windows while the screen is locked, because macOS hides them from Accessibility. Commands say so and fail; `computercub apps` and listing with `computercub menu` still answer.
 - Chrome stops updating a page's tree while its window is completely covered.
-- No right-click menus yet, and mouse-wheel scrolling only for windows with nothing in Accessibility (iPhone Mirroring). Dragging uses the real mouse, so it brings the window forward for a moment.
+- No right-click menus yet, and mouse-wheel scrolling only for windows without an Accessibility scroll area (iPhone Mirroring, and apps that draw their own scrolling such as GPUI ones, which get wheel scrolls posted to their window from the background). Dragging uses the real mouse, so it brings the window forward for a moment.
 - Nothing asks before an agent posts, sends or deletes something. Tell your agent to ask you first.
 
 ## Development

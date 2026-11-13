@@ -77,8 +77,9 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
                                               Quote keys with [ ] ? or *: 'cmd+[' (zsh globs them)
   computercub menu <app> [File > New Window]  list an app's menus, or pick an item
   computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area.
-                                              In a window with no refs (a phone), a wheel
-                                              scroll that borrows the real pointer for a moment
+                                              With no scroll area (GPUI apps), wheel scrolls
+                                              sent to the window, pointer untouched. In a window
+                                              with no refs (a phone), see the phone notes
   computercub drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
   computercub move <window> <x> <y> [w h]     move (and resize) a window, in points from the
                                               main display's top-left corner
@@ -849,10 +850,28 @@ final class Commands {
         }
         guard direction == "up" || direction == "down" else { throw CubError("Scroll up or down.") }
         guard let area = scrollArea(around: el) else {
-            // Nothing in Accessibility to scroll, as under iPhone Mirroring: a wheel scroll
-            // over the middle of the window, which the mirror hands the phone. It only
-            // takes one with the real pointer over the window, so this borrows it.
-            guard !isRef, Snapshot.lines(win, desk).isEmpty, let f = win.el.frame else { throw CubError("Nothing scrolls there.") }
+            guard let f = win.el.frame else { throw CubError("Nothing scrolls there.") }
+            if isRef || !Snapshot.lines(win, desk).isEmpty {
+                // Windows that draw their own scrolling (GPUI apps such as Threadbear GPUI and
+                // Zed) show buttons to Accessibility but no scroll area, and only what's on
+                // screen. They do take wheel events posted to their process, so it's those,
+                // over the element or the window's middle, with no pointer or window moved.
+                let at: CGPoint
+                if isRef, let r = el.frame { at = CGPoint(x: r.midX - f.minX, y: r.midY - f.minY) } else { at = CGPoint(x: f.width / 2, y: f.height / 2) }
+                return try acting(win, settle: false) {
+                    let before = Shot.thumb(win)
+                    let lines = Int32((f.height * 0.4 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
+                    Input.post(wheel: lines, at: at, in: win)
+                    usleep(250_000)
+                    // Nothing says whether it landed, so compare the picture.
+                    if let before, let after = Shot.thumb(win), !Shot.moved(before, after) {
+                        throw CubError("Nothing moved with a wheel scroll sent to \(target) from the background: it may already be at the \(direction == "up" ? "top" : "bottom"), or the app ignores scrolls it didn't get from the pointer. Take a shot to check.")
+                    }
+                    return "Scrolled \(direction) with wheel scrolls sent to the window, so \(userName)'s pointer stayed put. Snap again to see what came into view."
+                }
+            }
+            // Nothing in Accessibility at all, as under iPhone Mirroring: a wheel scroll
+            // over the middle of the window, which the mirror hands the phone.
             return try acting(win, settle: false) {
                 // About half the window per scroll, so what was at the edge stays in view.
                 let lines = Int32((f.height / 2 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
