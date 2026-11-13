@@ -321,7 +321,8 @@ enum Input {
         guard win.id != 0, let f = win.el.frame else { return false }
         let above = CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow, .excludeDesktopElements], CGWindowID(win.id)) as? [[String: Any]] ?? []
         return above.contains { w in
-            guard (w[kCGWindowLayer as String] as? Int) == 0, (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+            // Not ComputerCub's own: the outline around the window an agent is in sits above it.
+            guard (w[kCGWindowOwnerPID as String] as? Int32) != getpid(), (w[kCGWindowLayer as String] as? Int) == 0, (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b) else { return false }
             return r.intersects(f)
         }

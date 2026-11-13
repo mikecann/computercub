@@ -22,3 +22,28 @@ final class ShotMovedTests: XCTestCase {
         XCTAssertFalse(PictureChange.moved(before, after, width: width, part: CGRect(x: 0.5, y: 0.5, width: 0.2, height: 0.2)))
     }
 }
+
+final class ScrollColumnTests: XCTestCase {
+    // A header button over a list: the button's own box stays still, so the whole column
+    // under it is what's watched, and a small list lower down in it still counts.
+    func testAHeaderButtonWatchesTheListBelowIt() {
+        let window = CGRect(x: 100, y: 100, width: 1200, height: 800)
+        let button = CGRect(x: 200, y: 120, width: 40, height: 20)
+        let part = PictureChange.column(of: button, in: window)
+        XCTAssertEqual(part.minY, 0)
+        XCTAssertEqual(part.height, 1)
+        XCTAssertEqual(part.width, 0.125, accuracy: 0.0001)
+        let width = 256, height = 170
+        let before = [UInt8](repeating: 30, count: width * height)
+        var after = before
+        // The list scrolls: 200×100 points, below the button, in a 1200×800 window.
+        for y in 30..<51 { for x in 22..<64 { after[y * width + x] = (x + y) % 2 == 0 ? 220 : 30 } }
+        XCTAssertFalse(PictureChange.moved(before, after, width: width))
+        XCTAssertTrue(PictureChange.moved(before, after, width: width, part: part))
+    }
+
+    func testAColumnAtTheEdgeStaysInThePicture() {
+        let part = PictureChange.column(of: CGRect(x: 1290, y: 500, width: 10, height: 10), in: CGRect(x: 100, y: 100, width: 1200, height: 800))
+        XCTAssertLessThanOrEqual(part.maxX, 1.0001)
+    }
+}

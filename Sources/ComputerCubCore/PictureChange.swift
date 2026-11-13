@@ -18,4 +18,16 @@ public enum PictureChange {
         let changed = idx.filter { abs(Int(a[$0]) - Int(b[$0])) > 24 }.count
         return Double(changed) / Double(idx.count) > 0.03
     }
+
+    // The part of the window to watch when scrolling over an element: its column, top to
+    // bottom, at least an eighth of the window wide. Not just the element's own box, which
+    // can stay still while the list it's part of moves (a fixed header button, or rows
+    // that look alike), but still narrow enough that a small list in it counts.
+    public static func column(of element: CGRect, in window: CGRect) -> CGRect {
+        guard window.width > 0 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let w = max(element.width / window.width, 0.125)
+        let mid = (element.midX - window.minX) / window.width
+        let x = min(max(0, mid - w / 2), max(0, 1 - w))
+        return CGRect(x: x, y: 0, width: min(1, w), height: 1)
+    }
 }
