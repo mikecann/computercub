@@ -313,8 +313,6 @@ enum Input {
         return ns.map { $0.doubleValue / 1e9 } ?? .infinity
     }
 
-    // Whether Mike has used the Mac in the last two minutes. When the last input was one of
-    // ComputerCub's own borrows, that only ran because he'd been away, so he still is.
     // Whether an ordinary window above this one overlaps it. Bounds don't need Screen
     // Recording, so this works without it.
     static func covered(_ win: Win) -> Bool {
@@ -328,6 +326,30 @@ enum Input {
         }
     }
 
+    // GPUI apps (Threadbear GPUI, Zed) stop drawing a window that's covered: it still takes
+    // events, but its picture stays as it was until it's resized. Their binaries carry
+    // GPUI's own view class name, which is the cheapest sure sign. Kept per process.
+    private static var gpui: [pid_t: Bool] = [:]
+    static func isGPUI(_ pid: pid_t) -> Bool {
+        if let known = gpui[pid] { return known }
+        let url = NSRunningApplication(processIdentifier: pid)?.executableURL
+        let found = url.flatMap { try? Data(contentsOf: $0, options: .alwaysMapped) }?.range(of: Data("GPUIView".utf8)) != nil
+        gpui[pid] = found
+        return found
+    }
+
+    // Makes a covered GPUI window draw what it has, still behind: a point taller and back.
+    static func redraw(_ win: Win) {
+        guard let f = win.el.frame else { return }
+        var taller = CGSize(width: f.width, height: f.height + 1), back = f.size
+        guard win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &taller)!) == .success else { return }
+        usleep(150_000)
+        win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &back)!)
+        usleep(250_000)
+    }
+
+    // Whether Mike has used the Mac in the last two minutes. When the last input was one of
+    // ComputerCub's own borrows, that only ran because he'd been away, so he still is.
     static func mikeActive(within seconds: Double = 120) -> Bool {
         let idle = idleSeconds()
         if let b = lastBorrow, idle + 2 >= Date().timeIntervalSince(b) { return false }

@@ -864,24 +864,16 @@ final class Commands {
                 let part = isRef ? el.frame.map { PictureChange.column(of: $0, in: f) } : nil
                 let width = part == nil ? 64 : 256
                 return try acting(win, settle: false) {
-                    // A GPUI window that's covered by another takes events but doesn't draw
-                    // them (so its shots go stale) until it's resized. A point taller and back
-                    // makes it draw, still behind: once before the baseline, so changes from
-                    // earlier don't pass for this scroll, and once after.
+                    // A covered GPUI window takes the scroll but doesn't draw it (see
+                    // Input.isGPUI), so it's redrawn before the baseline, so changes from
+                    // earlier don't pass for this scroll, and again after.
                     let covered = Input.covered(win)
-                    func redraw() {
-                        var taller = CGSize(width: f.width, height: f.height + 1), back = f.size
-                        guard win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &taller)!) == .success else { return }
-                        usleep(150_000)
-                        win.el.set(kAXSizeAttribute, AXValueCreate(.cgSize, &back)!)
-                        usleep(250_000)
-                    }
-                    if covered { redraw() }
+                    if covered { Input.redraw(win) }
                     let before = Shot.thumb(win, width: width)
                     let lines = Int32((f.height * 0.4 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
                     Input.post(wheel: lines, at: at, in: win)
                     usleep(250_000)
-                    if covered { redraw() }
+                    if covered { Input.redraw(win) }
                     // Nothing says whether it landed, so compare the picture.
                     guard let before, let after = Shot.thumb(win, width: width) else {
                         return "Sent \(direction) wheel scrolls to the window, but without Screen Recording I can't see whether it moved. Snap again to check."
@@ -1058,6 +1050,9 @@ final class Commands {
             (el, win) = (nil, try desk.window(target))
         }
         let shared = desk.sharedWith(win)
+        // A covered GPUI window's picture is whatever it last drew, so a shot of it could
+        // show a page it has since left, and a click aimed from it would land wrong.
+        if Input.isGPUI(win.pid), Input.covered(win) { Input.redraw(win) }
         let taken = try Shot.capture(win, crop: el?.frame, maxSide: max, overlays: desk.overlays(of: win))
         desk.lastShots[win.id] = taken.map
         return [taken.line, shared].compactMap { $0 }.joined(separator: "\n")

@@ -24,7 +24,8 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    got). Apps that draw their own UI (GPUI ones: Threadbear GPUI, Zed) have no scroll area and only
    show Accessibility what's on screen, so `scroll` sends them wheel scrolls from the background
    instead; snap again after. Some of their controls aren't in Accessibility at all (Threadbear
-   GPUI's Settings rows): `shot` the window and `click <window> x y` the spot. Each answers with what changed, so don't snap again after it. In a file picker,
+   GPUI's Settings rows): `shot` the window and `click <window> x y` the spot. A covered GPUI window
+   stops drawing, so `shot` and `scroll` resize it by a point and back first to get today's picture. Each answers with what changed, so don't snap again after it. In a file picker,
    cmd+shift+g opens Go to Folder for hidden places like ~/Library. Quote keys with brackets or `?` (`press w3 'cmd+['`): zsh reads them as a file pattern.
 4. Windows stay in the background, so Mike keeps his focus. `press` runs a cmd shortcut by
    pressing its menu item, Return and Escape as the control's Confirm and Cancel (Escape on a
