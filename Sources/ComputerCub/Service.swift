@@ -74,11 +74,16 @@ enum Client {
             print(helpText)
             return 0
         }
-        // A dev build outside the app bundle has no app to hold the grants, so it runs
-        // in-process (and only works if whatever started it has them), unless a dev
-        // `serve` with its own COMPUTERCUB_HOME is listening: then refs last between commands.
+        // A private service belongs to the host that explicitly started it. Never
+        // replace it through LaunchServices or fall back to this client's OS grants.
+        // Returning here also leaves a permission-related restart to that host.
+        if Paths.isDev, !args.contains("--local") {
+            guard let reply = call(args, app: nil) else { return 1 }
+            return finish(reply)
+        }
+        // An unbundled dev build runs in-process unless a private service was selected
+        // above. --local explicitly requests in-process execution in either build.
         guard let app = appBundle(), !args.contains("--local") else {
-            if Paths.isDev, !args.contains("--local"), let reply = call(args, app: nil) { return finish(reply) }
             let me = Agent.caller()
             return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: me?.name, session: me?.pid))
         }
@@ -97,7 +102,10 @@ enum Client {
     // app, only to a service that's already up.
     private static func call(_ args: [String], app: URL?) -> Reply? {
         var fd = connect()
-        if fd < 0 && app == nil { return nil }
+        if fd < 0 && app == nil {
+            FileHandle.standardError.write("computercub: couldn't connect to private service at \(Paths.socket). Stop and check the owned server; do not launch a replacement.\n".data(using: .utf8)!)
+            return nil
+        }
         if fd < 0, let app {
             // `open` starts it through LaunchServices, so it's its own responsible process.
             let p = Process()
@@ -123,7 +131,10 @@ enum Client {
         guard let line = Wire.readLine(fd),
               let reply = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
             // Almost always the app being stopped mid-command, by a reinstall or `computercub quit`.
-            FileHandle.standardError.write("computercub: no answer from ComputerCub.app; it stopped before replying (a reinstall or `computercub quit` does that). The command may or may not have happened: snap to see, then retry.\n".data(using: .utf8)!)
+            let message = Paths.isDev
+                ? "no valid reply from the private service at \(Paths.socket). The command's outcome is unknown; stop, do not retry or replace the service."
+                : "no answer from ComputerCub.app; it stopped before replying (a reinstall or `computercub quit` does that). The command may or may not have happened: snap to see, then retry."
+            FileHandle.standardError.write("computercub: \(message)\n".data(using: .utf8)!)
             return nil
         }
         return Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? "", restart: reply["restart"] as? Bool ?? false)

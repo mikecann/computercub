@@ -61,9 +61,9 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 For an isolated check under a GUI host that the user has already authorized, read
 [references/private-service.md](references/private-service.md) first. Preserve the whole signed
 app bundle, start `serve` directly under that host with a fresh `COMPUTERCUB_HOME`, and check
-the service's actual OS permissions. Stop on denial. A bundled CLI can auto-launch through
-`open` if its socket is absent, so use the reference's direct socket requests for this mode.
-New privacy permissions remain the user's choice.
+the service's actual OS permissions. Stop on denial. Use the reference's direct socket
+requests for copied bundles; older clients can auto-launch or restart a service even with
+`COMPUTERCUB_HOME`. New privacy permissions remain the user's choice.
 
 ## Mike's iPhone
 

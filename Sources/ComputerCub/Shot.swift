@@ -10,6 +10,9 @@ enum Paths {
     static let support = ProcessInfo.processInfo.environment["COMPUTERCUB_HOME"].map { URL(fileURLWithPath: $0) }
         ?? home.appendingPathComponent("Library/Application Support/ComputerCub")
     static let isDev = ProcessInfo.processInfo.environment["COMPUTERCUB_HOME"] != nil
+    // A copied signed app under a private host must leave setup/restarts to that host.
+    // Unbundled development services still need their isolated setup UI for testing.
+    static let isPrivateApp = isDev && Bundle.main.bundleURL.pathExtension == "app"
     static let socket = support.appendingPathComponent("computercub.sock").path
     static let cache = home.appendingPathComponent("Library/Caches/ComputerCub")
     static let shots = cache.appendingPathComponent("shots")
@@ -24,6 +27,10 @@ enum Shot {
     // Also returns how the picture maps onto the window, for `click <window> x y`.
     static func capture(_ win: Win, crop: CGRect?, maxSide: Int, overlays: [(id: CGWindowID, frame: CGRect, layer: Int)] = []) throws -> (line: String, map: ShotMap?) {
         guard CGPreflightScreenCaptureAccess() else {
+            if Paths.isPrivateApp {
+                // Older clients also understand this refusal without trying to restart us.
+                throw CubError("Private service is missing Screen Recording access. Stop and report it to the owning host.")
+            }
             CGRequestScreenCaptureAccess()
             throw CubError("ComputerCub needs Screen Recording for screenshots: System Settings › Privacy & Security › Screen & System Audio Recording, turn on ComputerCub. Everything else works without it.", restart: true)
         }

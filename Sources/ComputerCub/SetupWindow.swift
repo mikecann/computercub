@@ -69,6 +69,8 @@ final class SetupModel: ObservableObject {
 
     /// Opens a new copy once this one has quit, so a Screen Recording grant takes.
     func restart() {
+        // Only the private service's owning host may replace its child.
+        guard !Paths.isPrivateApp else { return }
         let path = Bundle.main.bundlePath
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -165,6 +167,9 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        // A private host owns its permission setup and child lifetime. Opening this
+        // window could steal focus and offer a LaunchServices restart outside its lease.
+        guard !Paths.isPrivateApp else { return }
         if window == nil {
             let host = NSHostingController(rootView: SetupView(model: model) { [weak self] in self?.window?.close() })
             let w = NSWindow(contentViewController: host)

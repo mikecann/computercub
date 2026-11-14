@@ -119,6 +119,7 @@ final class Commands {
             // Waits for Mike outside the work queue, so other commands still run meanwhile.
             case "handoff": return Reply(ok: true, out: try handoff(a, agent: agent))
             case "setup":
+                guard !Paths.isPrivateApp else { throw CubError("Private service setup belongs to its owning host. Stop if required OS permissions are missing.") }
                 guard !Thread.isMainThread else { throw CubError("setup needs the ComputerCub app; run the installed `computercub`.") }
                 DispatchQueue.main.async { SetupWindowController.shared.show() }
                 return Reply(ok: true, out: "Opened ComputerCub's setup window.")

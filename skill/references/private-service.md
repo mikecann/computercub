@@ -31,9 +31,11 @@ trusted source. If either differs or verification fails, stop; preserve the orig
 
 ## Start explicitly inside the authorized host
 
-Run the following in one Bash shell started by that host, after acquiring its desktop lease.
-Set `job_app` to the absolute path of the intact verified copy first. These are separate
-steps to inspect, not an unattended script to run through a permission failure.
+For a host without an inherited-descriptor lease contract, run the following in one Bash
+shell started by that host, after acquiring its desktop lease. If the host uses lease file
+descriptors, use its launcher as described below instead. Set `job_app` to the absolute path
+of the intact verified copy first. These are separate steps to inspect, not an unattended
+script to run through a permission failure.
 
 ```bash
 umask 077
@@ -49,18 +51,63 @@ path in the job's ownership record. Require a live child with the expected `"$cu
 command and a nonempty start time. Keep the private path short: the Unix socket path has a
 103-byte limit. Wait briefly for `$cub_home/computercub.sock`; if the child exits or the socket
 does not appear, inspect the log and stop. Do not launch a client as a readiness probe.
+Start `serve` from the exact executable path inside the copied bundle shown above, never
+from a CLI symlink or detached executable; the private app's setup guards require bundle context.
 
 Before each connection, verify that `ps` still matches the recorded identity and that
 `lsof -a -p "$cub_pid" -U` shows that exact private socket held by the owned server.
 If ownership is missing or differs, stop; do not connect or signal a replacement process.
 
+### Hosts that pass lease ownership through file descriptors
+
+Follow the host's descriptor contract when starting the child. In the Desk Runner lease
+used for the remote probe, FD 197 is the unlocked lease capability that lets the host reaper
+identify the job's descendants after the worker is killed. FDs 198/199 hold host locks and
+must never reach the service. These numbers belong to that host's contract, not ComputerCub.
+
+Python's `Popen` closes inherited descriptors by default. Inside that host's Python worker,
+with `cub_bin`, `cub_home` and an open `service_log` already prepared:
+
+```python
+os.fstat(197)  # Stop if the expected capability descriptor is absent.
+child = subprocess.Popen(
+    [cub_bin, "serve"],
+    env={**os.environ, "COMPUTERCUB_HOME": cub_home},
+    stdin=subprocess.DEVNULL,
+    stdout=service_log,
+    stderr=subprocess.STDOUT,
+    close_fds=True,
+    pass_fds=(197,),
+)
+```
+
+Import `os` and `subprocess` in the worker. The descriptor number must come from the host's
+lease contract; `fstat` only checks that it is open, not its ownership or purpose. If the
+host supplies a known device/inode identity, compare it too. Pass only that capability, never
+198/199; do not use `close_fds=False`. If the capability is absent, stop instead of launching
+without it. Retain this direct `Popen` child and record its PID/start/path and private socket
+as above. Normal cleanup shuts down and waits/reaps this child before releasing the lease;
+the host reaper handles worker death. Other GUI hosts need their own ownership contract.
+
 ## Check permissions through that socket
 
-The bundled CLI normally starts an app through LaunchServices (`open`) when no service
-answers. That makes the app its own responsible process and may give a different permission
-result. `COMPUTERCUB_HOME` alone does not disable this auto-launch. The CLI also retries some
-screenshot failures by restarting the service. For this mode, send requests directly to the
-existing private socket so failure cannot launch or restart anything:
+Clients with the existing-service-only fix and `COMPUTERCUB_HOME` only connect to a private service. They
+fail when it is unavailable, and return permission errors without restarting it. They also
+never fall back to in-process execution unless `--local` was explicitly requested. The host
+owns starting, checking and stopping the child. Clients without `COMPUTERCUB_HOME` keep
+their normal launch/restart behavior.
+
+Bundled private services with that fix also suppress their setup window, refuse `setup`,
+and fail the screenshot preflight without requesting missing permission. Permission setup
+and restarts belong to the owning host. Unbundled dev services keep their isolated setup UI
+for development. With any older copied service, leave its
+setup/restart controls alone and stop on missing permissions. A setup-window restart can
+launch outside the private home and lease.
+
+Older bundled clients can start an app through LaunchServices (`open`) if their private
+socket disappears, or restart it after some screenshot failures. That makes the app its own
+responsible process and may give a different permission result. Use direct requests to the
+existing private socket as the default for this recipe, even when a newer client is available:
 
 ```bash
 printf '%s\n' '{"args":["doctor"]}' | /usr/bin/nc -w 5 -U "$cub_home/computercub.sock"
