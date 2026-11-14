@@ -15,11 +15,14 @@ API. README.md has the why and the shape; this is for working on it.
   whatever grants your terminal or Threadbear Runner has. `.build/debug/computercub quit`
   with the env set stops it; without the env, `quit` stops everyone's ComputerCub.
 - `COMPUTERCUB_HOME` selects an existing private service; clients fail if it is unavailable
-  and never launch or restart it. Use `--local` only for intentional in-process dev commands.
+  and never launch or restart it. Use `computercub --local <command>` only for intentional
+  in-process dev commands; `--local` after the command name is command data.
   For an intact signed bundle under an already-authorized remote GUI host, follow
   `skill/references/private-service.md`, including direct socket requests for older clients.
-  Bundled private services leave setup/restarts to their host; unbundled dev services keep
-  their isolated setup UI so it can be tested without taking over the installed service.
+  All private services leave setup/restarts to their host, including detached and symlinked
+  executables. To test the isolated setup UI deliberately, start the dev service with
+  `COMPUTERCUB_DEV_SETUP=1`; this permits setup/permission requests but never a LaunchServices
+  restart. Restart that child from its owning host. Keep this opt-in off for remote probes.
 - Clicks and keys go through Accessibility and post to the app's process. Real mouse events
   take Mike's pointer, so add another route before reaching for `Input.click`.
 - Test on harmless things (Finder windows you open yourself, System Settings' About

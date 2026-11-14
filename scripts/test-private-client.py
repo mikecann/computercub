@@ -89,7 +89,9 @@ class PrivateClientTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("couldn't connect to private service", result.stderr)
 
-    def test_permission_denial_does_not_restart_or_retry(self):
+    def test_restart_hint_returns_the_original_denial(self):
+        # This is an unbundled wire check. The bundled restart regression is covered
+        # by PrivateServiceTests.testPrivateBundledPermissionDenialCannotRestartOrReplay.
         reply = b'{"ok":false,"out":"Screen Recording denied","restart":true}\n'
         result = self.exchange(reply, "shot", "w1")
         self.assertEqual(result.returncode, 1)
@@ -100,6 +102,11 @@ class PrivateClientTests(unittest.TestCase):
         result = self.exchange(reply, "windows")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Accessibility denied", result.stderr)
+
+    def test_local_text_stays_on_the_private_socket(self):
+        result = self.exchange(b'{"ok":true,"out":"sent"}\n', "type", "w1", "--local")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "sent\n")
 
     def test_service_closes_without_reply(self):
         result = self.exchange(None, "doctor")

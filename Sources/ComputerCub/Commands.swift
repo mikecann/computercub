@@ -2,38 +2,10 @@ import AppKit
 import ApplicationServices
 import ComputerCubCore
 
-struct Reply {
-    var ok: Bool
-    var out: String
-    var restart = false
-}
+typealias Reply = ClientReply
+typealias Args = CommandArguments
 
-struct Args {
-    var pos: [String] = []
-    var flags: [String: String] = [:]
-    static let valued: Set<String> = ["wait", "max", "find"]
-
-    init(_ argv: [String]) {
-        var i = 0
-        while i < argv.count {
-            let s = argv[i]
-            if s.hasPrefix("--") {
-                let k = String(s.dropFirst(2))
-                if Args.valued.contains(k), i + 1 < argv.count {
-                    flags[k] = argv[i + 1]
-                    i += 2
-                    continue
-                }
-                flags[k] = ""
-            } else {
-                pos.append(s)
-            }
-            i += 1
-        }
-    }
-
-    func has(_ k: String) -> Bool { flags[k] != nil }
-
+extension CommandArguments {
     func at(_ i: Int, _ what: String) throws -> String {
         guard i < pos.count else { throw CubError("Missing \(what). See `computercub help`.") }
         return pos[i]
@@ -99,10 +71,12 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub setup                           the window that walks through the permissions
   computercub clean                           delete screenshots and saved reads now
   computercub quit                            stop the background app
+  computercub --local <command>              explicitly run in this process (development)
 
 A window is w3, an app ("Finder"), an app and part of its title ("Chrome:Web Store"),
 or "front". Clicks, typing and keys answer with what changed, so there's no need to
 snap again after each one.
+Use -- before literal text beginning with --, for example: computercub type w3 -- --submit.
 """
 
 final class Commands {
@@ -119,7 +93,7 @@ final class Commands {
             // Waits for Mike outside the work queue, so other commands still run meanwhile.
             case "handoff": return Reply(ok: true, out: try handoff(a, agent: agent))
             case "setup":
-                guard !Paths.isPrivateApp else { throw CubError("Private service setup belongs to its owning host. Stop if required OS permissions are missing.") }
+                guard Paths.policy.allowsSetup else { throw CubError("Private service setup belongs to its owning host. Stop if required OS permissions are missing.") }
                 guard !Thread.isMainThread else { throw CubError("setup needs the ComputerCub app; run the installed `computercub`.") }
                 DispatchQueue.main.async { SetupWindowController.shared.show() }
                 return Reply(ok: true, out: "Opened ComputerCub's setup window.")

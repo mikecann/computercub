@@ -22,9 +22,17 @@ enum Permissions {
 /// itself for that alone; screenshots are optional.
 enum SetupPrefs {
     static let skippedScreenRecordingKey = "skippedScreenRecording"
+    private static var privateSkippedScreenRecording = false
     static var skippedScreenRecording: Bool {
-        get { UserDefaults.standard.bool(forKey: skippedScreenRecordingKey) }
-        set { UserDefaults.standard.set(newValue, forKey: skippedScreenRecordingKey) }
+        get {
+            Paths.isDev ? privateSkippedScreenRecording : UserDefaults.standard.bool(forKey: skippedScreenRecordingKey)
+        }
+        set {
+            // A private copy shares the installed bundle id, so its dev setup must
+            // keep this choice in memory instead of changing the installed app's defaults.
+            if Paths.isDev { privateSkippedScreenRecording = newValue }
+            else { UserDefaults.standard.set(newValue, forKey: skippedScreenRecordingKey) }
+        }
     }
 }
 
@@ -70,7 +78,7 @@ final class SetupModel: ObservableObject {
     /// Opens a new copy once this one has quit, so a Screen Recording grant takes.
     func restart() {
         // Only the private service's owning host may replace its child.
-        guard !Paths.isPrivateApp else { return }
+        guard Paths.policy.allowsRestart else { return }
         let path = Bundle.main.bundlePath
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -109,7 +117,8 @@ struct SetupView: View {
             HStack {
                 if model.askedForScreen && s.screenRecording != .granted {
                     Button("Restart ComputerCub", action: model.restart)
-                        .help("Screen Recording only takes after a restart")
+                        .disabled(!Paths.policy.allowsRestart)
+                        .help(Paths.policy.allowsRestart ? "Screen Recording only takes after a restart" : "Restart this private service from its owning host")
                 }
                 Spacer()
                 Button(s.isComplete ? "Done" : "Later") {
@@ -169,7 +178,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     func show() {
         // A private host owns its permission setup and child lifetime. Opening this
         // window could steal focus and offer a LaunchServices restart outside its lease.
-        guard !Paths.isPrivateApp else { return }
+        guard Paths.policy.allowsSetup else { return }
         if window == nil {
             let host = NSHostingController(rootView: SetupView(model: model) { [weak self] in self?.window?.close() })
             let w = NSWindow(contentViewController: host)

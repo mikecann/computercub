@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "computercub", targets: ["ComputerCub"])
     ],
     targets: [
-        // The setup window's state, kept apart from AppKit so it can be tested.
+        // Routing and setup policy stay apart from AppKit so tests never drive the desktop.
         .target(name: "ComputerCubCore"),
         .executableTarget(name: "ComputerCub", dependencies: ["ComputerCubCore"]),
         .testTarget(name: "ComputerCubCoreTests", dependencies: ["ComputerCubCore"]),

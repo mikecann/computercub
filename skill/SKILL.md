@@ -45,6 +45,7 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    rename in Finder shows the new text and stays the old name. Use `--submit` to have it
    typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
    field from the background, it says so; `--front` brings the window up and clicks it.
+   Use `--` before literal text that looks like an option, as in `type w3 -- --submit`.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.
 7. `computercub shot <window|ref>` only when you need to see it. For a window with no refs, `click`,
@@ -64,6 +65,8 @@ app bundle, start `serve` directly under that host with a fresh `COMPUTERCUB_HOM
 the service's actual OS permissions. Stop on denial. Use the reference's direct socket
 requests for copied bundles; older clients can auto-launch or restart a service even with
 `COMPUTERCUB_HOME`. New privacy permissions remain the user's choice.
+Private mode is independent of the executable's bundle path. Keep `COMPUTERCUB_DEV_SETUP`
+unset or `0` during inspection; `1` explicitly enables setup UI for development only.
 
 ## Mike's iPhone
 

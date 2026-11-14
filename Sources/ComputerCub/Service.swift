@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ComputerCubCore
 
 // macOS gives Accessibility and Screen Recording to the "responsible" process. A bare CLI
 // run by an agent counts as part of whatever started it (Threadbear Runner, Terminal),
@@ -69,32 +70,20 @@ enum Service {
 }
 
 enum Client {
-    static func run(_ args: [String]) -> Int32 {
+    static func run(_ arguments: [String]) -> Int32 {
+        let request = ClientArguments(arguments)
+        let args = request.command
         if args.isEmpty || ["help", "-h", "--help"].contains(args[0]) {
             print(helpText)
             return 0
         }
-        // A private service belongs to the host that explicitly started it. Never
-        // replace it through LaunchServices or fall back to this client's OS grants.
-        // Returning here also leaves a permission-related restart to that host.
-        if Paths.isDev, !args.contains("--local") {
-            guard let reply = call(args, app: nil) else { return 1 }
-            return finish(reply)
-        }
-        // An unbundled dev build runs in-process unless a private service was selected
-        // above. --local explicitly requests in-process execution in either build.
-        guard let app = appBundle(), !args.contains("--local") else {
-            let me = Agent.caller()
-            return finish(Commands.shared.run(args.filter { $0 != "--local" }, agent: me?.name, session: me?.pid))
-        }
-        guard var reply = call(args, app: app) else { return 1 }
-        // Granting Screen Recording while the app is running doesn't reach it until it
-        // restarts, so restart it once and try again before giving up.
-        if !reply.ok && reply.restart {
-            restart(app)
-            guard let again = call(args, app: app) else { return 1 }
-            reply = again
-        }
+        guard let reply = ClientSession.run(
+            request, isPrivate: Paths.isDev, app: appBundle(), call: call,
+            local: { args in
+                let me = Agent.caller()
+                return Commands.shared.run(args, agent: me?.name, session: me?.pid)
+            }, restart: restart
+        ) else { return 1 }
         return finish(reply)
     }
 
@@ -102,7 +91,7 @@ enum Client {
     // app, only to a service that's already up.
     private static func call(_ args: [String], app: URL?) -> Reply? {
         var fd = connect()
-        if fd < 0 && app == nil {
+        if fd < 0 && (app == nil || Paths.isDev) {
             FileHandle.standardError.write("computercub: couldn't connect to private service at \(Paths.socket). Stop and check the owned server; do not launch a replacement.\n".data(using: .utf8)!)
             return nil
         }
@@ -137,11 +126,12 @@ enum Client {
             FileHandle.standardError.write("computercub: \(message)\n".data(using: .utf8)!)
             return nil
         }
-        return Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? "", restart: reply["restart"] as? Bool ?? false)
+        return Reply(ok: reply["ok"] as? Bool ?? false, out: reply["out"] as? String ?? "", restart: !Paths.isDev && (reply["restart"] as? Bool ?? false))
     }
 
     // Stops the running app and waits for it to go, so the next call starts a fresh one.
     private static func restart(_ app: URL) {
+        guard !Paths.isDev else { return }
         _ = call(["quit"], app: app)
         for _ in 0..<40 {
             let fd = connect()

@@ -41,7 +41,7 @@ script to run through a permission failure.
 umask 077
 cub_home=$(mktemp -d /tmp/cub.XXXXXXXX) || exit 1
 cub_bin="$job_app/Contents/MacOS/computercub"
-COMPUTERCUB_HOME="$cub_home" "$cub_bin" serve >"$cub_home/service.log" 2>&1 &
+COMPUTERCUB_HOME="$cub_home" COMPUTERCUB_DEV_SETUP=0 "$cub_bin" serve >"$cub_home/service.log" 2>&1 &
 cub_pid=$!
 cub_identity=$(LC_ALL=C ps -ww -p "$cub_pid" -o lstart= -o command=)
 ```
@@ -52,7 +52,8 @@ command and a nonempty start time. Keep the private path short: the Unix socket 
 103-byte limit. Wait briefly for `$cub_home/computercub.sock`; if the child exits or the socket
 does not appear, inspect the log and stop. Do not launch a client as a readiness probe.
 Start `serve` from the exact executable path inside the copied bundle shown above, never
-from a CLI symlink or detached executable; the private app's setup guards require bundle context.
+from a detached executable; the signature needs its bundle metadata. Private setup and
+restart guards apply regardless of bundle context, including when a symlink is used.
 
 Before each connection, verify that `ps` still matches the recorded identity and that
 `lsof -a -p "$cub_pid" -U` shows that exact private socket held by the owned server.
@@ -72,7 +73,7 @@ with `cub_bin`, `cub_home` and an open `service_log` already prepared:
 os.fstat(197)  # Stop if the expected capability descriptor is absent.
 child = subprocess.Popen(
     [cub_bin, "serve"],
-    env={**os.environ, "COMPUTERCUB_HOME": cub_home},
+    env={**os.environ, "COMPUTERCUB_HOME": cub_home, "COMPUTERCUB_DEV_SETUP": "0"},
     stdin=subprocess.DEVNULL,
     stdout=service_log,
     stderr=subprocess.STDOUT,
@@ -93,14 +94,18 @@ the host reaper handles worker death. Other GUI hosts need their own ownership c
 
 Clients with the existing-service-only fix and `COMPUTERCUB_HOME` only connect to a private service. They
 fail when it is unavailable, and return permission errors without restarting it. They also
-never fall back to in-process execution unless `--local` was explicitly requested. The host
+never fall back to in-process execution unless `--local` precedes the command name, as in
+`computercub --local doctor`. A later `--local` is preserved as command data. The host
 owns starting, checking and stopping the child. Clients without `COMPUTERCUB_HOME` keep
 their normal launch/restart behavior.
 
-Bundled private services with that fix also suppress their setup window, refuse `setup`,
-and fail the screenshot preflight without requesting missing permission. Permission setup
-and restarts belong to the owning host. Unbundled dev services keep their isolated setup UI
-for development. With any older copied service, leave its
+Private services with the follow-up policy fix suppress their setup window, refuse `setup`,
+and fail the screenshot preflight without requesting missing permission, regardless of how
+the executable was started. Permission setup and restarts belong to the owning host. An
+explicit `COMPUTERCUB_DEV_SETUP=1` permits isolated setup UI/permission requests for development;
+it never permits a LaunchServices restart or a restart hint in the service's reply. Restart
+that dev child from its owning host. The launch examples force this opt-in off so an inherited
+dev setting cannot enable setup during inspection. With any older copied service, leave its
 setup/restart controls alone and stop on missing permissions. A setup-window restart can
 launch outside the private home and lease.
 
