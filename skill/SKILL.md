@@ -56,6 +56,15 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
 
+## Private services and remote GUI hosts
+
+For an isolated check under a GUI host that the user has already authorized, read
+[references/private-service.md](references/private-service.md) first. Preserve the whole signed
+app bundle, start `serve` directly under that host with a fresh `COMPUTERCUB_HOME`, and check
+the service's actual OS permissions. Stop on denial. A bundled CLI can auto-launch through
+`open` if its socket is absent, so use the reference's direct socket requests for this mode.
+New privacy permissions remain the user's choice.
+
 ## Mike's iPhone
 
 Before asking Mike to check something on his iPhone 15 Pro Max (a setting, what's on screen),

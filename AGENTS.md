@@ -14,6 +14,9 @@ API. README.md has the why and the shape; this is for working on it.
   in the background, and use `.build/debug/computercub` against it (same env). It borrows
   whatever grants your terminal or Threadbear Runner has. `.build/debug/computercub quit`
   with the env set stops it; without the env, `quit` stops everyone's ComputerCub.
+- For an intact signed bundle under an already-authorized remote GUI host, follow
+  `skill/references/private-service.md`. A bundled client can auto-launch through `open`
+  even with `COMPUTERCUB_HOME`; the recipe uses direct socket requests and stops on denial.
 - Clicks and keys go through Accessibility and post to the app's process. Real mouse events
   take Mike's pointer, so add another route before reaching for `Input.click`.
 - Test on harmless things (Finder windows you open yourself, System Settings' About
