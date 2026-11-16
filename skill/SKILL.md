@@ -78,6 +78,12 @@ Before asking Mike to check something on his iPhone 15 Pro Max (a setting, what'
 look yourself. He's had to remind agents that this exists. There are two ways in, and which
 one works depends on whether the phone is locked.
 
+The same goes for a step in a phone app (a setting, sharing, signing up): do it here rather than
+writing out the steps for him. Him having the phone in his hand isn't a reason to skip it. Don't
+grab it mid-task unasked, but offer to do it ("I can do this on your phone, want me to?", or the
+card's "Can you do it?"). On 16 Nov an agent twice judged his phone "in use" and wrote out BYD app
+steps he couldn't follow, until he asked "Do you want to do it via iPhone mirroring?".
+
 **Unlocked: `phone`.** A helper on the phone itself takes taps over Wi-Fi, so nothing on the Mac
 is touched. `computercub shot phone`, then `click phone x y [--double|--long]`,
 `swipe phone x y x2 y2`, `scroll phone down|up`, `type phone "text" [--submit]` after tapping the
