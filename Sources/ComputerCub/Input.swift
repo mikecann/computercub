@@ -51,12 +51,10 @@ enum Input {
     static func key(_ combo: String, pid: pid_t?, modifierKeys: Bool = false) throws {
         let (code, flags) = try parse(combo)
         let src = CGEventSource(stateID: .hidSystemState)
-        guard let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false) else {
+        guard let down = KeyEvent.key(code, down: true, flags: flags, source: src),
+              let up = KeyEvent.key(code, down: false, flags: flags, source: src) else {
             throw CubError("Couldn't make a key event. Does ComputerCub have Accessibility?")
         }
-        down.flags = flags
-        up.flags = flags
         let mods = modifierKeys ? modifiers(flags) : []
         var held: CGEventFlags = []
         for (m, f) in mods {
@@ -112,8 +110,7 @@ enum Input {
         let src = CGEventSource(stateID: .hidSystemState)
         for (code, shift, units) in keys {
             for down in [true, false] {
-                guard let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down) else { continue }
-                e.flags = shift ? .maskShift : []
+                guard let e = KeyEvent.key(code, down: down, flags: shift ? .maskShift : [], source: src) else { continue }
                 e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
                 post(e, pid)
                 usleep(down ? 12_000 : 18_000)
@@ -129,10 +126,9 @@ enum Input {
             try before()
             if ch == "\n" { try key("return", pid: pid); continue }
             if ch == "\t" { try key("tab", pid: pid); continue }
-            let units = Array(String(ch).utf16)
             for down in [true, false] {
-                guard let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down) else { continue }
-                e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+                // KeyEvent.text sets no modifiers; left to the source, a stuck cmd made them shortcuts.
+                guard let e = KeyEvent.text(ch, down: down, source: src) else { continue }
                 post(e, pid)
             }
             usleep(6_000)
@@ -414,6 +410,7 @@ enum Input {
         let src = CGEventSource(stateID: .hidSystemState)
         func post(_ type: CGEventType, _ p: CGPoint) {
             guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+            e.clearModifiers()  // a stale held cmd from the source would make this a cmd-drag, a move instead of a copy
             if type != .mouseMoved { e.setIntegerValueField(.mouseEventClickState, value: 1) }
             e.post(tap: .cghidEventTap)
         }
@@ -643,6 +640,7 @@ enum Input {
             let n = left > 0 ? min(left, 5) : max(left, -5)
             guard let e = CGEvent(scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState), units: .line,
                                   wheelCount: 2, wheel1: n, wheel2: 0, wheel3: 0) else { return }
+            e.clearModifiers()  // a stale held cmd or ctrl from the source turns scrolling into zooming
             e.location = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
             let id = Int64(win.id)
             e.setIntegerValueField(CGEventField(rawValue: 51)!, value: id)
@@ -674,6 +672,7 @@ enum Input {
     private static func send(_ type: CGEventType, at local: CGPoint, in win: Win, frame w: CGRect, n: Int64, _ src: CGEventSource?, delta: CGPoint = .zero) {
         let p = CGPoint(x: w.minX + local.x, y: w.minY + local.y)
         guard let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { return }
+        e.clearModifiers()  // see KeyEvent: a stale held cmd from the source would make this a cmd-click
         e.setIntegerValueField(.mouseEventClickState, value: n)
         e.setIntegerValueField(.mouseEventSubtype, value: 3)  // NSEventSubtypeTouch, so it isn't read as a tablet
         e.setDoubleValueField(.mouseEventPressure, value: type == .leftMouseUp || type == .mouseMoved ? 0 : 1)
@@ -801,7 +800,7 @@ enum Input {
             // Two moves, a moment apart: with just one, and the wheel straight after, the
             // mirror sometimes hadn't noticed the pointer arrive and dropped the scroll.
             for q in [CGPoint(x: p.x + 1, y: p.y), p] {
-                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: q, mouseButton: .left)?.post(tap: .cghidEventTap)
+                movePointer(to: q)
                 usleep(150_000)
             }
             // In bursts of a few lines, as a wheel sends them, not one big jump.
@@ -809,6 +808,7 @@ enum Input {
             while left != 0 {
                 let n = left > 0 ? min(left, 5) : max(left, -5)
                 let e = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: n, wheel2: 0, wheel3: 0)
+                e?.clearModifiers()  // a stale held ctrl would make this a screen zoom (see KeyEvent)
                 e?.location = p
                 e?.post(tap: .cghidEventTap)
                 left -= n
@@ -818,7 +818,7 @@ enum Input {
             // Back where Mike left it, unless he's moved it himself meanwhile. A real move
             // rather than a warp, which sends no events, so the mirror sees the pointer leave.
             if let saved, let now = CGEvent(source: nil)?.location, hypot(now.x - p.x, now.y - p.y) < 2 {
-                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: saved, mouseButton: .left)?.post(tap: .cghidEventTap)
+                movePointer(to: saved)
             }
         }
     }
@@ -833,14 +833,22 @@ enum Input {
         return p
     }
 
+    // Moves Mike's pointer, with no stale held modifier from the window server (see KeyEvent).
+    private static func movePointer(to p: CGPoint) {
+        let e = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)
+        e?.clearModifiers()
+        e?.post(tap: .cghidEventTap)
+    }
+
     private static func realClick(at p: CGPoint, double: Bool, hold: useconds_t = 20_000) {
         defer { lastBorrow = Date() }
         let saved = CGEvent(source: nil)?.location
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+        movePointer(to: p)
         usleep(40_000)
         for n in 1...(double ? 2 : 1) {
             for type in [CGEventType.leftMouseDown, .leftMouseUp] {
                 guard let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { continue }
+                e.clearModifiers()  // a nil source inherits held modifiers too, stale ones included (see KeyEvent)
                 e.setIntegerValueField(.mouseEventClickState, value: Int64(n))
                 e.post(tap: .cghidEventTap)
                 usleep(type == .leftMouseDown ? hold : 20_000)
