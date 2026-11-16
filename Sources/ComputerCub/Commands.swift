@@ -522,6 +522,13 @@ final class Commands {
         if role == "AXSecureTextField" || el.string(kAXSubroleAttribute) == "AXSecureTextField" {
             throw CubError("\(ref) is a password field. Passwords stay with \(userName): use `computercub handoff \(desk.ref(for: win)) \"…\"`.")
         }
+        // Keys typed into a control act on it: a space in TextEdit's bold checkbox ticked it,
+        // and with nothing to read back it looked like the text went in.
+        let controls: Set<String> = [kAXCheckBoxRole, kAXButtonRole, kAXRadioButtonRole, kAXPopUpButtonRole, kAXMenuButtonRole,
+                                     kAXSliderRole, "AXLink", kAXImageRole, kAXMenuItemRole, kAXDisclosureTriangleRole, "AXTab"]
+        if controls.contains(role) {
+            throw CubError("\(ref) is a \(el.string(kAXRoleDescriptionAttribute) ?? role), not a text field, so keys would press it. Not typed. Snap for the field you mean.")
+        }
         return try acting(win) {
             // Setting the value is instant and doesn't depend on focus, but the app isn't told:
             // the snap shows the new text while Finder's rename fields carry on as before. So
@@ -558,35 +565,48 @@ final class Commands {
         }
     }
 
-    // Text for the phone that goes faster and safer as a paste than as keys: long text (each
-    // key is a round trip to the phone, and a long run is where keys went wrong), anything
-    // with a line break, and characters with no key on a US keyboard.
+    // Text that goes faster and safer as a paste than as keys: long text (each key is a round
+    // trip to the phone, and on the Mac a long run of keys is a long run of shortcuts if the
+    // field drops focus), anything with a line break (a typed one is Return, which sends in
+    // chat apps), and characters with no key on a US keyboard.
     static func pastes(_ text: String) -> Bool {
         text.count > 60 || text.contains("\n") || text.contains { Input.usKey($0) == nil }
     }
 
     // Puts the text on the Mac's clipboard and presses cmd+v in the mirror, which pastes it
-    // on the phone, as Mike would. His clipboard goes back the way it was afterwards.
+    // on the phone, as Mike would.
     private func pasteOnPhone(_ text: String, win: Win) throws {
+        // Give the phone time to fetch it before it's swapped back.
+        try onClipboard(text, hold: 1_500_000) {
+            Input.focusBehind(win)
+            usleep(300_000)
+            try Input.key("cmd+v", pid: win.pid, modifierKeys: true)
+        }
+    }
+
+    // Runs body with the text on the clipboard, then puts Mike's clipboard back the way it
+    // was, after hold microseconds for the app to read it.
+    private func onClipboard(_ text: String, hold: useconds_t, _ body: () throws -> Void) throws {
         let board = NSPasteboard.general
         let saved = (board.pasteboardItems ?? []).map { item in
             item.types.compactMap { t in item.data(forType: t).map { (t, $0) } }
         }
         board.clearContents()
         board.setString(text, forType: .string)
+        let ours = board.changeCount
         defer {
-            // Give the phone time to fetch it before it's swapped back.
-            usleep(1_500_000)
-            board.clearContents()
-            board.writeObjects(saved.map { kinds in
-                let item = NSPasteboardItem()
-                for (t, d) in kinds { item.setData(d, forType: t) }
-                return item
-            })
+            usleep(hold)
+            // Something else copied meanwhile (Mike, or an app): that's newer, so leave it.
+            if board.changeCount == ours {
+                board.clearContents()
+                board.writeObjects(saved.map { kinds in
+                    let item = NSPasteboardItem()
+                    for (t, d) in kinds { item.setData(d, forType: t) }
+                    return item
+                })
+            }
         }
-        Input.focusBehind(win)
-        usleep(300_000)
-        try Input.key("cmd+v", pid: win.pid, modifierKeys: true)
+        try body()
     }
 
     // Tries from the background first. Some fields are drawn by a helper process that keys
@@ -596,26 +616,82 @@ final class Commands {
     // would: bring the window up, click the field, and use the keyboard. That takes his
     // focus, so only with --front (or with the app in front already); otherwise it says
     // so and leaves the call to the agent. Returns whether the window came forward.
+    //
+    // No key goes out until the app says its keyboard focus is in the field (hasKeyFocus).
+    // Keys go to the focus, not the field, and in Slack a reply box that hadn't taken it
+    // turned a typed sentence into shortcuts: a file picker, the shortcuts panel, search.
     private func typeKeys(_ text: String, into el: AXUIElement, ref: String, win: Win, submit: Bool, front: Bool) throws -> Bool {
-        func send(_ to: pid_t?) throws -> Bool {
-            if !el.selectAllText() { try Input.key("cmd+a", pid: to) }
-            try Input.type(text, pid: to)
+        // Set when a key was held back because focus left the field. That isn't a delivery
+        // failure for --front to retry: the app moved focus on purpose (a popup, a search).
+        var focusLost = false
+        // Checked right before every key. With to == nil the key is posted system-wide and goes
+        // to whichever app is in front, so that has to still be ours, not just its focus.
+        func guardFocus(_ to: pid_t?) throws {
+            if to == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier != win.pid {
+                focusLost = true
+                let now = NSWorkspace.shared.frontmostApplication?.localizedName ?? "another app"
+                throw CubError("Stopped typing into \(ref): \(now) came to the front, so the rest would have gone there. Check what did go in with a snap.")
+            }
+            guard el.hasKeyFocus else {
+                focusLost = true
+                throw CubError("Stopped typing into \(ref): its keyboard focus moved to \(focusedSummary(pid: win.pid)), "
+                    + "so the rest would have gone there. Check what did go in with a snap.")
+            }
+        }
+        func send(_ to: pid_t?, paste: Bool) throws -> Bool {
+            try guardFocus(to)
+            if !el.selectAllText() {
+                // selectAllText is several AX round trips, long enough for focus to move.
+                try guardFocus(to)
+                try Input.key("cmd+a", pid: to)
+            }
+            if paste {
+                var landed = false
+                // The hold is for apps that read the clipboard late, and for text with line
+                // breaks, which waitForText can't confirm.
+                try onClipboard(text, hold: 500_000) {
+                    try guardFocus(to)
+                    try Input.key("cmd+v", pid: to)
+                    landed = el.waitForText(text)
+                }
+                return landed
+            }
+            try Input.type(text, pid: to, before: { try guardFocus(to) })
             return el.waitForText(text)
         }
-        if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
-        var why = el.isFocused ? "\(ref) already shows that text, so there's no telling whether keys land" : "\(ref) wouldn't take focus in the background"
+        func pressReturn(_ to: pid_t?) throws {
+            do { try guardFocus(to) } catch {
+                throw CubError("Typed into \(ref), but focus moved away (\(win.appName)'s is on \(focusedSummary(pid: win.pid))), so Return wasn't pressed.")
+            }
+            try Input.key("return", pid: to)
+        }
+        // A typed line break is Return, which sends in chat apps, and a typed tab moves focus
+        // on. Those only go in as a paste, which needs the window in front.
+        let pasteOnly = text.contains(where: { $0.isNewline || $0 == "\t" })
+        if !el.hasKeyFocus { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
+        let focused = el.waitForKeyFocus(0.2)
+        var why = focused ? "\(ref) already shows that text, so there's no telling whether keys land"
+            : "\(ref) wouldn't take keyboard focus in the background (it's on \(focusedSummary(pid: win.pid)))"
         // If the field already shows this text, there's no telling whether keys landed.
-        if el.isFocused, el.string(kAXValueAttribute) != text {
+        if pasteOnly { why = "text with a line break or tab only goes in as a paste, which needs the window in front" }
+        if focused, !pasteOnly, el.string(kAXValueAttribute) != text {
             var landed = false
             do {
                 try Input.toWindow(win, front: false) { to in
-                    landed = try send(to)
-                    if landed && submit { try Input.key("return", pid: to) }
+                    // Checked again here: aiming the window can move the app's focus.
+                    guard el.hasKeyFocus else { return }
+                    landed = try send(to, paste: false)
+                    if landed && submit { try pressReturn(to) }
                 }
                 if landed { return false }
-                why = "keys sent in the background didn't land in \(ref)" + (el.string(kAXValueAttribute).map { " (it shows \"\(clip($0))\")" } ?? "")
-            } catch is CubError where front {
+                why = el.hasKeyFocus
+                    ? "keys sent in the background didn't land in \(ref)" + (el.string(kAXValueAttribute).map { " (it shows \"\(clip($0))\")" } ?? "")
+                    : "\(ref) lost keyboard focus to \(focusedSummary(pid: win.pid)) in the background"
+            } catch let e as CubError where front {
                 // Keys can't get there from the background, and --front says come forward.
+                // But if focus moved away mid-way, typing it all again from the front could
+                // submit into whatever took it, so that stops here.
+                if focusLost { throw e }
             }
         }
         if !front && win.pid != NSWorkspace.shared.frontmostApplication?.processIdentifier {
@@ -623,18 +699,23 @@ final class Commands {
                 + "Without --submit or --keys, type just sets the text.")
         }
         try Input.toWindow(win, front: true) { to in
-            if !el.isFocused { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
+            if !el.hasKeyFocus { el.set(kAXFocusedAttribute, kCFBooleanTrue) }
             // The first click on a page that's just loaded can go unnoticed, hence two tries:
             // one sent to the window, then Mike's pointer if that didn't take.
-            for attempt in 0..<2 where !el.isFocused {
+            for attempt in 0..<2 where !el.waitForKeyFocus(attempt == 0 ? 0.2 : 0.4) {
                 if attempt == 0 { try Input.post(click: el, in: win, double: false) } else { try Input.click(el, in: win, double: false) }
-                usleep(250_000)
             }
-            guard try send(to) else {
+            guard el.waitForKeyFocus() else {
+                throw CubError("Not typed: clicked \(ref), but \(win.appName)'s keyboard focus is on \(focusedSummary(pid: win.pid)), "
+                    + "so keys would have gone there (as shortcuts, in some apps). Nothing was sent. Snap again: the field may have moved or need a click first.")
+            }
+            // In front, long text goes in as one paste rather than a key per character, so a
+            // field that drops focus mid-way can't take the rest as shortcuts.
+            guard try send(to, paste: pasteOnly || Self.pastes(text)) else {
                 let now = el.string(kAXValueAttribute).map { "\"\(clip($0))\"" } ?? "something else"
                 throw CubError("Typed into \(ref), but it shows \(now)\(submit ? ", so Return wasn't pressed" : "").")
             }
-            if submit { try Input.key("return", pid: to) }
+            if submit { try pressReturn(to) }
         }
         return true
     }

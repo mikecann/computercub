@@ -44,7 +44,11 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
 5. `computercub type` without flags only sets the field's value, which apps may not notice: a
    rename in Finder shows the new text and stays the old name. Use `--submit` to have it
    typed with real keys and Return, or `--keys` for keys alone. If they don't reach the
-   field from the background, it says so; `--front` brings the window up and clicks it.
+   field from the background, it says so; `--front` brings the window up, clicks it, and
+   pastes long text rather than typing it. No key goes out until the app's keyboard focus is
+   in that field; if it isn't (common in Slack and other Electron apps), it stops with
+   "Not typed" and says where focus is. Don't work round that by pressing keys at the window:
+   snap again, click the field, and retry.
    Use `--` before literal text that looks like an option, as in `type w3 -- --submit`.
 6. Passwords, passkeys and 2FA are Mike's: `computercub handoff <window> "what to do" --wait 300`
    shows him a panel and waits for Done, then gives you the diff.

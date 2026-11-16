@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import ComputerCubCore
 
 // Private, but it's been stable since 10.6 and every window manager uses it (Rectangle,
 // AltTab, Peekaboo). It's the only way from an AX window to the CGWindowID that
@@ -93,6 +94,21 @@ extension AXUIElement {
 
     var isFocused: Bool { attr(kAXFocusedAttribute) as? Bool == true }
 
+    // Whether keys sent to the app now would land here: see KeyFocus.
+    var hasKeyFocus: Bool {
+        KeyFocus.holds(target: self, appFocused: AXUIElementCreateApplication(pid).element(kAXFocusedUIElementAttribute),
+                       targetSaysFocused: isFocused, parent: { $0.element(kAXParentAttribute) }, same: { CFEqual($0, $1) })
+    }
+
+    // Focus can take a moment to settle after a click, more so in web views.
+    func waitForKeyFocus(_ seconds: Double = 0.6) -> Bool {
+        for _ in 0..<max(1, Int(seconds / 0.05)) {
+            if hasKeyFocus { return true }
+            usleep(50_000)
+        }
+        return hasKeyFocus
+    }
+
     // Unlike cmd+a, which is a menu shortcut and only fires in the active app.
     func selectAllText() -> Bool {
         var all = CFRange(location: 0, length: (string(kAXValueAttribute) ?? "").utf16.count)
@@ -114,6 +130,15 @@ extension AXUIElement {
         }
         return false
     }
+}
+
+// What has an app's keyboard focus, for saying where keys would have gone instead.
+func focusedSummary(pid: pid_t) -> String {
+    guard let f = AXUIElementCreateApplication(pid).element(kAXFocusedUIElementAttribute) else { return "nothing it will name" }
+    let label = [f.string(kAXTitleAttribute), f.string(kAXDescriptionAttribute), f.string(kAXPlaceholderValueAttribute)]
+        .compactMap { $0 }.first { !$0.isEmpty }
+    let role = f.string(kAXRoleDescriptionAttribute) ?? f.string(kAXRoleAttribute) ?? "an element"
+    return label.map { "\(role) \"\(clip($0, 40))\"" } ?? role
 }
 
 func clip(_ s: String, _ max: Int = 80) -> String {

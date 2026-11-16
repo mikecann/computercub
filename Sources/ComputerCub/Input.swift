@@ -121,9 +121,12 @@ enum Input {
         }
     }
 
-    static func type(_ text: String, pid: pid_t?) throws {
+    // before runs ahead of every character and can throw to stop: `type` uses it to stop the
+    // moment the field loses keyboard focus, so the rest can't land elsewhere as shortcuts.
+    static func type(_ text: String, pid: pid_t?, before: () throws -> Void = {}) throws {
         let src = CGEventSource(stateID: .hidSystemState)
         for ch in text {
+            try before()
             if ch == "\n" { try key("return", pid: pid); continue }
             if ch == "\t" { try key("tab", pid: pid); continue }
             let units = Array(String(ch).utf16)
