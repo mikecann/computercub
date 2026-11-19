@@ -749,15 +749,11 @@ final class Commands {
             win = try desk.window(target)
         }
         for c in combos { _ = try Input.parse(c) }  // fail before sending any of them
-        // Shift reaches the other computer from the front, but a posted Command didn't: cmd+a
-        // arrived on Tinker Desk as a plain "a", and cmd+v into a password box as one letter.
+        // Modifiers reach the other computer only from the front, pressed as keys with their
+        // left-key bits (see CGEventFlags.withLeftKeys): from the background cmd+a arrived as "a".
         // Keys go to the picture whatever ref is named in its window (its toolbar buttons).
         let remote = win.isRemoteCanvas
         let modified = combos.filter { (try? Input.parse($0).1.isEmpty) == false }
-        if remote, let c = combos.first(where: { (try? Input.parse($0).1.contains(.maskCommand)) == true }) {
-            throw CubError("Not sent: \(win.appName) doesn't pass a Command shortcut from ComputerCub on to the other computer (\(c) would arrive as a plain key). "
-                + "Use the other computer's menus with clicks instead, or `type` the text rather than pasting it.")
-        }
         // All checked before any key goes, so a list doesn't stop half-pressed.
         if remote, let c = modified.first, !front, !win.inFront { throw CubError(Self.remoteShift(win, "\(c) has a modifier")) }
         // In front already (or asked to come forward), keys behave as Mike's would.
