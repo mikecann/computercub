@@ -11,6 +11,30 @@ struct Win {
     var title: String { el.string(kAXTitleAttribute) ?? "" }
     // Mike's iPhone, mirrored: nothing in Accessibility, and keys go on to the phone.
     var isMirroring: Bool { app.bundleIdentifier == "com.apple.ScreenContinuity" }
+    // Another computer's screen (Screen Sharing, VNC and RDP viewers). Like the mirror they
+    // pass keys on by key code and ignore the text an event carries, so text sent as key 0
+    // arrived on Tinker Desk as "aaaaaaa".
+    var isRemoteScreen: Bool { Win.remoteScreens.contains(app.bundleIdentifier ?? "") }
+    // The window showing the other computer's picture, rather than one of the viewer's own
+    // (its Connect dialog, a sign-in sheet), where keys and Command shortcuts are the Mac's as
+    // usual. Those have text fields; the picture's window shows Accessibility only its
+    // toolbar buttons. Judged by the window, not by focus, which moves as keys are aimed.
+    var isRemoteCanvas: Bool {
+        guard isRemoteScreen else { return false }
+        let text: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole]
+        var level = [el]
+        for _ in 0..<4 {
+            level = level.flatMap { $0.elements(kAXChildrenAttribute) }
+            if level.contains(where: { text.contains($0.string(kAXRoleAttribute) ?? "") }) { return false }
+        }
+        return true
+    }
+    // Keys for these go as real keys, held modifiers and all, never as text.
+    var sendsKeyCodes: Bool { isMirroring || isRemoteCanvas }
+    // Modifiers only reach the other computer while the viewer is the active app.
+    var inFront: Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == pid }
+    static let remoteScreens: Set<String> = ["com.apple.ScreenSharing", "com.realvnc.vncviewer", "com.microsoft.rdc.macos",
+                                             "com.p5sys.jump.mac.viewer"]
 }
 
 // Everything the service remembers between commands: which refs point where, and the

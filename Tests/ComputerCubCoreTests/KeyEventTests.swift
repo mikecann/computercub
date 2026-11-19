@@ -43,4 +43,12 @@ final class KeyEventTests: XCTestCase {
         e.clearModifiers()
         XCTAssertEqual(e.flags.rawValue, 0x2000_0000)
     }
+
+    // Screen Sharing reads which modifier key is down from these bits, not the plain flags.
+    func testLeftKeysAddsEachModifiersDeviceBit() {
+        XCTAssertEqual(CGEventFlags.maskShift.withLeftKeys.rawValue, CGEventFlags.maskShift.rawValue | 0x2)
+        XCTAssertEqual(CGEventFlags([.maskCommand, .maskAlternate, .maskControl]).withLeftKeys.rawValue,
+                       CGEventFlags([.maskCommand, .maskAlternate, .maskControl]).rawValue | 0x8 | 0x20 | 0x1)
+        XCTAssertEqual(CGEventFlags([]).withLeftKeys, [])
+    }
 }

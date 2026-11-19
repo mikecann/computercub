@@ -57,7 +57,14 @@ BrowserBear for ordinary Chrome pages; ComputerCub is for everything else.
    any menu or popover it has open; run `computercub clean` when you're done with personal
    screenshots. `snap` lists open menus and popovers too, and says when a menu is on screen
    but can't be read yet, so no `[menu]` means no menu.
-8. While the screen is locked macOS hides all windows from Accessibility, so window commands
+8. Screen Sharing (and other remote-desktop windows) passes keys on to the other computer by key,
+   so `type` and `press` send real keys. Lowercase letters, digits, space and Return work from the
+   background; capitals and symbols need Shift, which only gets there with `--front`. Command
+   shortcuts don't get through at all (cmd+v arrived as "v"), so `press` refuses them: use the
+   other computer's menus with clicks. Click with positions from its last shot, and `--pointer` if
+   a plain click doesn't land. `scroll <window> down [x y]` scrolls over that spot (from the last
+   shot), with the real pointer, so it needs `--front` while Mike's at the Mac.
+9. While the screen is locked macOS hides all windows from Accessibility, so window commands
    fail and say so; `computercub doctor` shows it too. Wait for Mike, or for a read-only
    check use AppleScript from your own shell if the app is scriptable.
 

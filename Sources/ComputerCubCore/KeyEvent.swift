@@ -31,6 +31,19 @@ public enum KeyEvent {
 }
 
 public extension CGEventFlags {
+    // A real keyboard also says which modifier key is down, left or right, in the low bits
+    // (NX_DEVICELCMDKEYMASK and friends). Screen Sharing reads those, not the plain flags:
+    // shift+p with only maskShift arrived on the other Mac as "p", and with these as "P".
+    // These are the left-hand keys', as Input.modifiers presses.
+    var withLeftKeys: CGEventFlags {
+        var raw = rawValue
+        if contains(.maskControl) { raw |= 0x1 }
+        if contains(.maskShift) { raw |= 0x2 }
+        if contains(.maskCommand) { raw |= 0x8 }
+        if contains(.maskAlternate) { raw |= 0x20 }
+        return CGEventFlags(rawValue: raw)
+    }
+
     static let modifiers: CGEventFlags = [.maskAlphaShift, .maskShift, .maskControl, .maskAlternate, .maskCommand,
                                           .maskSecondaryFn, .maskHelp, .maskNumericPad]
 }

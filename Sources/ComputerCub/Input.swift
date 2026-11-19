@@ -49,17 +49,18 @@ enum Input {
     // iPhone Mirroring needs that for cmd: it passes keys on to the phone as a hardware
     // keyboard, and cmd+a with only the flag set arrived as a plain "a".
     static func key(_ combo: String, pid: pid_t?, modifierKeys: Bool = false) throws {
-        let (code, flags) = try parse(combo)
+        let (code, parsed) = try parse(combo)
+        let flags = modifierKeys ? parsed.withLeftKeys : parsed
         let src = CGEventSource(stateID: .hidSystemState)
         guard let down = KeyEvent.key(code, down: true, flags: flags, source: src),
               let up = KeyEvent.key(code, down: false, flags: flags, source: src) else {
             throw CubError("Couldn't make a key event. Does ComputerCub have Accessibility?")
         }
-        let mods = modifierKeys ? modifiers(flags) : []
+        let mods = modifierKeys ? modifiers(parsed) : []
         var held: CGEventFlags = []
         for (m, f) in mods {
             held.insert(f)
-            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: true) { e.type = .flagsChanged; e.flags = held; post(e, pid) }
+            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: true) { e.type = .flagsChanged; e.flags = held.withLeftKeys; post(e, pid) }
             usleep(15_000)
         }
         post(down, pid)
@@ -68,7 +69,7 @@ enum Input {
         usleep(15_000)
         for (m, f) in mods.reversed() {
             held.remove(f)
-            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: false) { e.type = .flagsChanged; e.flags = held; post(e, pid) }
+            if let e = CGEvent(keyboardEventSource: src, virtualKey: m, keyDown: false) { e.type = .flagsChanged; e.flags = held.withLeftKeys; post(e, pid) }
             usleep(15_000)
         }
         usleep(15_000)
@@ -100,7 +101,11 @@ enum Input {
     // text landed a letter late ("here.M\ny"). So every character goes as its real key, held
     // for a moment and in one steady stream, the way a person types. Throws, before sending
     // anything, for characters with no key on a US keyboard.
-    static func typeByKey(_ text: String, pid: pid_t?) throws {
+    //
+    // shiftKey also presses Shift itself around a capital, flagged as the left Shift key, as
+    // a keyboard does: Screen Sharing passes the other Mac the modifier keys it sees go down,
+    // and ignored a plain shift flag ("Privacy" arrived as "privacy").
+    static func typeByKey(_ text: String, pid: pid_t?, shiftKey: Bool = false, before: () throws -> Void = {}) throws {
         let keys = try text.map { ch -> (CGKeyCode, Bool, [UniChar]) in
             guard let (code, shift) = usKey(ch) else {
                 throw CubError("There's no key for \"\(ch)\" on a US keyboard.")
@@ -108,13 +113,24 @@ enum Input {
             return (code, shift, Array(String(ch).utf16))
         }
         let src = CGEventSource(stateID: .hidSystemState)
+        func pressShift(_ down: Bool) {
+            guard let e = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: down) else { return }
+            e.type = .flagsChanged
+            e.flags = down ? CGEventFlags.maskShift.withLeftKeys : []
+            post(e, pid)
+            usleep(15_000)
+        }
         for (code, shift, units) in keys {
+            try before()
+            if shift && shiftKey { pressShift(true) }
             for down in [true, false] {
-                guard let e = KeyEvent.key(code, down: down, flags: shift ? .maskShift : [], source: src) else { continue }
+                let flags: CGEventFlags = shift ? (shiftKey ? CGEventFlags.maskShift.withLeftKeys : .maskShift) : []
+                guard let e = KeyEvent.key(code, down: down, flags: flags, source: src) else { continue }
                 e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
                 post(e, pid)
                 usleep(down ? 12_000 : 18_000)
             }
+            if shift && shiftKey { pressShift(false) }
         }
     }
 

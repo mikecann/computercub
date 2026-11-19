@@ -51,7 +51,8 @@ ComputerCub: computer use for your Mac. Agents use its apps through the Accessib
   computercub scroll <ref|window> [up|down]   bring an element into view, or page a scroll area.
                                               With no scroll area (GPUI apps), wheel scrolls
                                               sent to the window, pointer untouched. In a window
-                                              with no refs (a phone), see the phone notes
+                                              with no refs (a phone), see the phone notes.
+                                              Screen Sharing: [up|down] [x y] over that spot
   computercub drag <ref> <ref|window>         a real mouse drag, e.g. a file onto a folder
   computercub move <window> <x> <y> [w h]     move (and resize) a window, in points from the
                                               main display's top-left corner
@@ -167,7 +168,7 @@ final class Commands {
             return try type(target, try a.at(1, "the text"), submit: a.has("submit"), keys: a.has("keys"), front: a.has("front"))
         case "press": return try press(try a.at(0, "a window or ref"), Array(a.pos.dropFirst()), front: a.has("front"))
         case "menu": return try menu(try a.at(0, "an app"), a.pos.count > 1 ? a.pos[1] : nil)
-        case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil, front: a.has("front"))
+        case "scroll": return try scroll(try a.at(0, "a ref or window"), a.pos.count > 1 ? a.pos[1] : nil, at: Array(a.pos.dropFirst(2)), front: a.has("front"))
         case "shot": return try shot(try a.at(0, "a window or ref"), max: Int(a.flags["max"] ?? "") ?? 1600)
         case "drag": return try drag(try a.at(0, "what to drag"), try a.at(1, "where to drop it"))
         case "move": return try move(try a.at(0, "a window"), Array(a.pos.dropFirst()))
@@ -557,9 +558,25 @@ final class Commands {
                 if submit { try Input.key("return", pid: win.pid, modifierKeys: true) }
                 return "Pasted it on the phone\(submit ? " and pressed Return" : "")."
             }
+            let remote = win.isRemoteCanvas
+            let shifted = text.contains { Input.usKey($0)?.shift == true }
+            if remote {
+                // The character isn't echoed: this may well be a password.
+                guard text.allSatisfy({ Input.usKey($0) != nil }) else {
+                    throw CubError("Not typed: \(win.appName) passes keys on to the other computer one key at a time, and some of the text has no key on a US keyboard. Nothing was sent.")
+                }
+                if shifted && !front && !win.inFront { throw CubError(Self.remoteShift(win, "the text has capitals or symbols, which need Shift")) }
+            }
+            // Checked before every key: if the viewer isn't in front (it wouldn't come forward,
+            // or something took over mid-way), the rest would arrive unshifted.
+            let stillFront = {
+                guard !remote || !shifted || win.inFront else {
+                    throw CubError("Stopped typing: \(win.appName) isn't the active app, so capitals and symbols would arrive on the other computer without Shift. Take a shot to see what went in.")
+                }
+            }
             let moved = try Input.toWindow(win, front: front) { to in
-                if win.isMirroring { try Input.typeByKey(text, pid: to) } else { try Input.type(text, pid: to) }
-                if submit { try Input.key("return", pid: to) }
+                if win.sendsKeyCodes { try Input.typeByKey(text, pid: to, shiftKey: remote, before: stillFront) } else { try Input.type(text, pid: to) }
+                if submit { try Input.key("return", pid: to, modifierKeys: win.sendsKeyCodes) }
             }
             return "Sent the keys to the window\(moved ? " in front" : "")\(submit ? " and pressed Return" : "")."
         }
@@ -732,10 +749,28 @@ final class Commands {
             win = try desk.window(target)
         }
         for c in combos { _ = try Input.parse(c) }  // fail before sending any of them
+        // Shift reaches the other computer from the front, but a posted Command didn't: cmd+a
+        // arrived on Tinker Desk as a plain "a", and cmd+v into a password box as one letter.
+        // Keys go to the picture whatever ref is named in its window (its toolbar buttons).
+        let remote = win.isRemoteCanvas
+        let modified = combos.filter { (try? Input.parse($0).1.isEmpty) == false }
+        if remote, let c = combos.first(where: { (try? Input.parse($0).1.contains(.maskCommand)) == true }) {
+            throw CubError("Not sent: \(win.appName) doesn't pass a Command shortcut from ComputerCub on to the other computer (\(c) would arrive as a plain key). "
+                + "Use the other computer's menus with clicks instead, or `type` the text rather than pasting it.")
+        }
+        // All checked before any key goes, so a list doesn't stop half-pressed.
+        if remote, let c = modified.first, !front, !win.inFront { throw CubError(Self.remoteShift(win, "\(c) has a modifier")) }
         // In front already (or asked to come forward), keys behave as Mike's would.
         if front || win.pid == NSWorkspace.shared.frontmostApplication?.processIdentifier {
             return try acting(win) {
-                let moved = try Input.toWindow(win, front: front) { to in for c in combos { try Input.key(c, pid: to) } }
+                let moved = try Input.toWindow(win, front: front) { to in
+                    for c in combos {
+                        if remote, modified.contains(c), !win.inFront {
+                            throw CubError("Not sent: \(win.appName) isn't the active app, so \(c) would arrive on the other computer as a plain key.")
+                        }
+                        try Input.key(c, pid: to, modifierKeys: win.sendsKeyCodes)
+                    }
+                }
                 return "Pressed \(combos.joined(separator: " "))\(moved ? " with the window in front" : "")."
             }
         }
@@ -777,6 +812,13 @@ final class Commands {
             try Input.key(combo, pid: win.pid, modifierKeys: true)
             return combo
         }
+        // A remote screen's menus are its own (Screen Sharing's Edit › Paste isn't the other
+        // Mac's), so every key goes on to the other computer, modifiers pressed as keys.
+        if win.isRemoteCanvas {
+            guard try Input.parse(combo).1.isEmpty else { throw CubError(Self.remoteShift(win, "\(combo) has a modifier")) }
+            try Input.toWindow(win, front: false) { try Input.key(combo, pid: $0) }
+            return combo
+        }
         let sheet = Input.onSheet(win)
         let retry = "If it's worth taking \(userName)'s focus, run it again with --front."
         // macOS only fires a shortcut in the active app, so press its menu item instead.
@@ -814,6 +856,13 @@ final class Commands {
         }
         try Input.toWindow(win, front: false) { try Input.key(combo, pid: $0) }
         return combo
+    }
+
+    // From the background a remote screen passes on the keys but not Shift, Command and
+    // the rest: "Privacy" arrived on Tinker Desk as "privacy", and cmd+a as "a".
+    static func remoteShift(_ win: Win, _ what: String) -> String {
+        "Not sent: \(what), and \(win.appName) only passes modifiers on to the other computer with its window in front "
+            + "(from the background they'd arrive as plain keys). If it's worth taking \(userName)'s focus, run it again with --front."
     }
 
     private func hasTabs(_ win: Win) -> Bool {
@@ -887,7 +936,7 @@ final class Commands {
         return (trail.isEmpty ? "\(app.localizedName ?? appQuery) menus" : trail.joined(separator: " > ")) + "\n" + out.joined(separator: "\n")
     }
 
-    private func scroll(_ target: String, _ direction: String?, front: Bool) throws -> String {
+    private func scroll(_ target: String, _ direction: String?, at numbers: [String] = [], front: Bool) throws -> String {
         let isRef = target.range(of: #"^e\d+$"#, options: .regularExpression) != nil
         let el: AXUIElement, win: Win
         if isRef {
@@ -895,6 +944,10 @@ final class Commands {
         } else {
             win = try desk.window(target)
             el = win.el
+        }
+        if !isRef, win.isRemoteCanvas, let direction { return try scrollRemote(win, target, direction, at: numbers, front: front) }
+        guard numbers.isEmpty else {
+            throw CubError("A position only goes with a remote screen's window (Screen Sharing). Here, scroll a ref or the window: `computercub scroll \(target) \(direction ?? "down")`.")
         }
         guard let direction else {
             guard isRef else { throw CubError("Say up or down, e.g. `computercub scroll \(target) down`.") }
@@ -1004,6 +1057,37 @@ final class Commands {
     }
 
     // The element's own scroll area if it's in one, otherwise the window's biggest.
+    // Another computer's screen, where the list to scroll is wherever it is in the picture:
+    // over the point given (from the last shot), or the window's middle. Screen Sharing
+    // ignored wheel events posted to it ("Nothing moved"), as iPhone Mirroring does, so it's
+    // the real pointer over it, which takes Mike's for a moment.
+    private func scrollRemote(_ win: Win, _ target: String, _ direction: String, at numbers: [String], front: Bool) throws -> String {
+        guard direction == "up" || direction == "down" else { throw CubError("Scroll up or down.") }
+        if (win.el.attr(kAXMinimizedAttribute) as? Bool) == true { throw CubError("That window is minimised.") }
+        guard let f = win.el.frame else { throw CubError("Can't tell where that window is on screen.") }
+        let p: CGPoint
+        if numbers.isEmpty {
+            p = CGPoint(x: f.width / 2, y: f.height / 2)
+        } else {
+            let v = numbers.compactMap(Double.init)
+            guard v.count == 2, numbers.count == 2 else {
+                throw CubError("Give x and y from the window's last shot, over the list to scroll: `computercub scroll \(target) down 800 500`.")
+            }
+            p = try shotPoint(win, target, x: v[0], y: v[1])
+        }
+        let lines = Int32((f.height * 0.3 / Input.pointsPerLine).rounded()) * (direction == "up" ? 1 : -1)
+        // Straight to the pointer: a picture check can't tell a scroll from the other
+        // computer's own animation, and posted wheels never moved Screen Sharing.
+        return try acting(win, settle: false) {
+            guard front || !Input.mikeActive() else {
+                throw CubError("Not scrolled: \(win.appName) only passes a scroll on to the other computer with the real pointer over it, and \(userName) is using the Mac. "
+                    + "If it's worth taking his pointer for a moment, run it again with --front.")
+            }
+            try Input.scroll(at: p, lines: lines, in: win)
+            return "Scrolled \(direction) with the real pointer over that spot, which borrowed \(userName)'s pointer for a moment. Shot again to see what came into view."
+        }
+    }
+
     private func scrollArea(around el: AXUIElement) -> AXUIElement? {
         var cur: AXUIElement? = el
         while let c = cur {
